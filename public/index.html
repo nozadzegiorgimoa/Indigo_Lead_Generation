@@ -1,0 +1,853 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Indigo Cars Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Noto+Sans+Georgian:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink:#16162B; --muted:#8B8BA3; --muted2:#7A7A93; --body-text:#4A4A63;
+    --bg:#F6F6FA; --card:#fff; --line:#EAEAF2; --line-soft:#F1F1F7; --input-line:#E2E2EC;
+    --accent:#5B4BE0; --accent-dark:#4A3BD0; --sidebar:#1E1B4B;
+    --sidebar-muted:#9C97D8; --sidebar-link:#B4AFE8;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Manrope','Noto Sans Georgian',system-ui,sans-serif; color:var(--ink); background:var(--bg); min-height:100vh; }
+  button,input,select,textarea { font-family:inherit; }
+
+  /* ── Login ── */
+  .login-wrap { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:24px;
+    background:radial-gradient(1200px 600px at 20% -10%, #2A2668 0%, #1E1B4B 45%, #16143A 100%); }
+  .login-card { width:100%; max-width:400px; background:var(--card); border-radius:20px; padding:36px 32px;
+    box-shadow:0 24px 60px rgba(20,18,45,.35); }
+  .login-brand { display:flex; align-items:center; gap:12px; margin-bottom:26px; }
+  .login-brand .brand-mark { width:44px; height:44px; border-radius:13px; background:var(--accent); color:#fff;
+    display:flex; align-items:center; justify-content:center; font-weight:800; font-size:17px; }
+  .login-brand b { display:block; font-weight:800; font-size:16px; letter-spacing:.14em; }
+  .login-brand span { display:block; font-weight:500; font-size:11px; letter-spacing:.22em; color:var(--muted); }
+  .login-title { font-size:20px; font-weight:800; letter-spacing:-.02em; margin-bottom:4px; }
+  .login-sub { font-size:13px; color:var(--muted); margin-bottom:24px; }
+  .login-card label { display:block; margin-bottom:16px; }
+  .login-error { background:#FDECEC; border:1px solid #F3C9C9; color:#A83A3A; padding:11px 14px;
+    border-radius:10px; font-size:13px; font-weight:600; margin-bottom:16px; display:none; }
+  .login-error.show { display:block; }
+
+  .field-label { display:block; font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted2); margin-bottom:8px; }
+  .field-input { width:100%; padding:13px 14px; border:1px solid var(--input-line); border-radius:11px; font-size:15px; color:var(--ink); background:#fff; outline:none; }
+  .field-input:focus { border-color:var(--accent); }
+  textarea.field-input { resize:vertical; }
+  .btn-full { width:100%; background:var(--accent); color:#fff; border:none; border-radius:11px; padding:14px; font-size:15px; font-weight:700; cursor:pointer; margin-top:4px; }
+  .btn-full:hover { background:var(--accent-dark); }
+  .btn-full:disabled { opacity:.6; cursor:default; }
+
+  /* ── App shell ── */
+  .app { display:flex; min-height:100vh; }
+  .sidebar { width:252px; flex:0 0 252px; background:var(--sidebar); color:#fff; padding:28px 20px; display:flex; flex-direction:column; gap:32px; }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .brand-mark { width:38px; height:38px; border-radius:11px; background:var(--accent); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:15px; letter-spacing:.02em; }
+  .brand-name { line-height:1.15; }
+  .brand-name b { display:block; font-weight:800; font-size:15px; letter-spacing:.14em; }
+  .brand-name span { display:block; font-weight:500; font-size:12px; letter-spacing:.22em; color:var(--sidebar-muted); }
+  .nav { display:flex; flex-direction:column; gap:4px; }
+  .nav button { text-align:left; background:transparent; color:var(--sidebar-link); border:none; border-radius:10px; padding:12px 14px; font-size:14px; font-weight:500; cursor:pointer; }
+  .nav button:hover { background:rgba(255,255,255,.07); color:#fff; }
+  .nav button.active { background:rgba(255,255,255,.12); color:#fff; font-weight:700; }
+  .sidebar-foot { margin-top:auto; display:flex; flex-direction:column; gap:20px; }
+  .lang-switch { display:flex; gap:6px; padding:4px; background:rgba(255,255,255,.07); border-radius:10px; }
+  .lang-switch button { flex:1; background:transparent; color:var(--sidebar-link); border:none; border-radius:8px; padding:8px 0; font-size:12px; font-weight:700; cursor:pointer; }
+  .lang-switch button.active { background:var(--accent); color:#fff; }
+  .user { border-top:1px solid rgba(255,255,255,.12); padding-top:18px; display:flex; align-items:center; gap:11px; }
+  .user-avatar { width:34px; height:34px; border-radius:50%; background:#3C3684; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#CFCBF5; }
+  .user-info { line-height:1.3; min-width:0; }
+  .user-name { font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .user-role { font-size:11px; color:var(--sidebar-muted); }
+  .logout-btn { background:none; border:none; color:var(--sidebar-link); font-size:12px; font-weight:600; cursor:pointer; padding:0; text-align:left; }
+  .logout-btn:hover { color:#fff; }
+
+  .main { flex:1; min-width:0; padding:34px 40px 56px; display:flex; flex-direction:column; gap:26px; max-width:1240px; }
+  .page-head { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; }
+  .kicker { font-size:12px; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-bottom:8px; }
+  h1 { font-size:30px; font-weight:800; letter-spacing:-.02em; }
+  .btn-primary { background:var(--accent); color:#fff; border:none; border-radius:11px; padding:14px 22px; font-size:14px; font-weight:700; cursor:pointer; box-shadow:0 6px 18px rgba(91,75,224,.28); white-space:nowrap; }
+  .btn-primary:hover { background:var(--accent-dark); }
+  .toast { background:#E9F7F0; border:1px solid #BFE6D4; color:#146A48; padding:14px 18px; border-radius:12px; font-size:14px; font-weight:600; }
+  .banner-error { background:#FDECEC; border:1px solid #F3C9C9; color:#A83A3A; padding:14px 18px; border-radius:12px; font-size:14px; font-weight:600; }
+  .muted-note { color:var(--muted); font-size:14px; padding:20px 2px; }
+
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:24px; }
+  .card h2 { font-size:16px; font-weight:700; margin-bottom:18px; }
+  .stack { display:flex; flex-direction:column; gap:26px; }
+
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; }
+  .stat { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:22px; }
+  .stat-label { font-size:12px; font-weight:600; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+  .stat-value { font-size:34px; font-weight:800; letter-spacing:-.03em; margin-top:10px; font-variant-numeric:tabular-nums; }
+  .stat-hint { font-size:12px; color:var(--muted); margin-top:4px; }
+
+  .dash-grid { display:grid; grid-template-columns:1.5fr 1fr; gap:20px; align-items:start; }
+  .pipe-rows { display:flex; flex-direction:column; gap:14px; }
+  .pipe-row { display:flex; align-items:center; gap:14px; }
+  .pipe-label { width:120px; flex:0 0 120px; font-size:13px; font-weight:600; }
+  .pipe-track { flex:1; height:10px; background:var(--line-soft); border-radius:99px; overflow:hidden; }
+  .pipe-bar { height:100%; border-radius:99px; }
+  .pipe-count { width:34px; text-align:right; font-size:14px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .op-rows { display:flex; flex-direction:column; gap:13px; }
+  .op-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .op-name { font-size:13px; font-weight:600; line-height:1.3; }
+  .op-branch { font-size:11px; color:var(--muted); }
+  .op-open { font-size:13px; font-weight:700; color:var(--accent); white-space:nowrap; }
+
+  .section-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .section-head h2 { margin:0; }
+  .link-btn { background:none; border:none; color:var(--accent); font-size:13px; font-weight:700; cursor:pointer; }
+  .recent-row { display:grid; grid-template-columns:1.4fr 1fr 1.2fr auto; gap:16px; align-items:center; text-align:left; width:100%; background:none; border:none; border-bottom:1px solid var(--line-soft); padding:15px 2px; cursor:pointer; }
+  .recent-row:hover { background:#FAFAFD; }
+  .cell-name { font-size:14px; font-weight:700; }
+  .cell-phone { font-size:12px; color:var(--muted); white-space:nowrap; }
+  .cell-dim { font-size:13px; color:var(--body-text); }
+  .badge { display:inline-block; padding:6px 12px; border-radius:99px; font-size:12px; font-weight:700; white-space:nowrap; justify-self:start; }
+
+  .lead-form { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:32px; display:flex; flex-direction:column; gap:26px; max-width:900px; }
+  .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .chip { background:#fff; color:var(--body-text); border:1px solid var(--input-line); border-radius:99px; padding:10px 16px; font-size:13px; font-weight:600; cursor:pointer; }
+  .chip.active { background:var(--sidebar); color:#fff; border-color:var(--sidebar); }
+  .form-foot { display:flex; align-items:center; justify-content:space-between; gap:20px; border-top:1px solid var(--line-soft); padding-top:22px; flex-wrap:wrap; }
+  .assign-preview { display:flex; align-items:center; gap:12px; }
+  .assign-avatar { width:34px; height:34px; border-radius:50%; background:#EDEBFB; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:var(--accent); }
+  .assign-label { font-size:12px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted2); }
+  .assign-name { font-size:14px; font-weight:600; }
+  .btn-secondary { background:#fff; color:var(--body-text); border:1px solid var(--input-line); border-radius:11px; padding:13px 20px; font-size:14px; font-weight:600; cursor:pointer; }
+  .btn-save { background:var(--accent); color:#fff; border:none; border-radius:11px; padding:13px 26px; font-size:14px; font-weight:700; cursor:pointer; }
+  .btn-save:hover { background:var(--accent-dark); }
+  .btn-save:disabled { opacity:.6; cursor:default; }
+
+  .list-tools { display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .search-input { flex:1; min-width:240px; padding:13px 16px; border:1px solid var(--input-line); border-radius:11px; font-size:14px; background:#fff; outline:none; }
+  .search-input:focus { border-color:var(--accent); }
+  .table-wrap { background:var(--card); border:1px solid var(--line); border-radius:16px; overflow-x:auto; }
+  .table-head { display:grid; grid-template-columns:1.3fr 1fr 1fr .9fr 1fr 110px; gap:16px; min-width:900px; padding:15px 24px; background:#FAFAFD; border-bottom:1px solid var(--line); font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+  .table-row { display:grid; grid-template-columns:1.3fr 1fr 1fr .9fr 1fr 110px; gap:16px; min-width:900px; align-items:center; width:100%; text-align:left; background:none; border:none; border-bottom:1px solid #F4F4F9; padding:17px 24px; cursor:pointer; }
+  .table-row:hover { background:#FAFAFD; }
+  .count-label { font-size:12px; color:var(--muted); }
+
+  .detail-grid { display:grid; grid-template-columns:1.6fr 1fr; gap:20px; align-items:start; }
+  .detail-card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:30px; display:flex; flex-direction:column; gap:26px; }
+  .detail-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; }
+  .back-btn { background:none; border:none; padding:0; color:var(--muted); font-size:13px; font-weight:600; cursor:pointer; margin-bottom:10px; }
+  .back-btn:hover { color:var(--accent); }
+  .detail-name { font-size:24px; font-weight:800; letter-spacing:-.02em; }
+  .detail-meta { font-size:13px; color:var(--muted); margin-top:6px; }
+  .fields-grid { display:grid; grid-template-columns:1fr 1fr; gap:20px 28px; }
+  .f-label { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:6px; }
+  .f-value { font-size:15px; font-weight:600; overflow-wrap:anywhere; }
+  .notes-box { font-size:14px; line-height:1.6; color:#3A3A55; background:#FAFAFD; border:1px solid var(--line-soft); border-radius:12px; padding:16px; text-wrap:pretty; }
+  .side-stack { display:flex; flex-direction:column; gap:20px; }
+  .side-title { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin-bottom:14px; }
+  .status-actions { display:flex; flex-direction:column; gap:8px; }
+  .status-btn { text-align:left; background:#fff; color:var(--body-text); border:1px solid var(--input-line); border-radius:10px; padding:12px 14px; font-size:13px; font-weight:600; cursor:pointer; }
+  .assignee { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+  .assignee-avatar { width:38px; height:38px; border-radius:50%; background:#EDEBFB; display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:700; color:var(--accent); }
+  .assignee-name { font-size:14px; font-weight:700; }
+  .assignee-branch { font-size:12px; color:var(--muted); }
+  .reassign-select { width:100%; padding:12px 14px; border:1px solid var(--input-line); border-radius:11px; font-size:14px; background:#fff; outline:none; }
+  .history { display:flex; flex-direction:column; gap:14px; }
+  .history-item { display:flex; gap:12px; }
+  .history-dot { width:8px; height:8px; border-radius:50%; background:var(--accent); margin-top:6px; flex:0 0 8px; }
+  .history-text { font-size:13px; font-weight:600; line-height:1.4; }
+  .history-at { font-size:11px; color:var(--muted); }
+
+  .spinner { width:26px; height:26px; border:3px solid var(--line); border-top-color:var(--accent); border-radius:50%; animation:spin .7s linear infinite; margin:40px auto; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration:2s; } }
+
+  @media (max-width:1000px) { .stats { grid-template-columns:repeat(2,1fr); } .dash-grid,.detail-grid { grid-template-columns:1fr; } }
+  @media (max-width:780px) {
+    .app { flex-direction:column; }
+    .sidebar { width:100%; flex:none; flex-direction:row; align-items:center; gap:16px; padding:14px 16px; flex-wrap:wrap; }
+    .nav { flex-direction:row; flex:1; gap:2px; }
+    .nav button { padding:10px 12px; font-size:13px; }
+    .sidebar-foot { margin:0; flex-direction:row; align-items:center; gap:12px; }
+    .user { border:none; padding:0; }
+    .user-info { display:none; }
+    .main { padding:22px 16px 48px; }
+    .page-head { flex-wrap:wrap; align-items:center; }
+    h1 { font-size:24px; }
+    .form-grid,.fields-grid { grid-template-columns:1fr; }
+    .lead-form { padding:22px; }
+    .recent-row { grid-template-columns:1.4fr 1fr auto; }
+    .recent-row .col-operator { display:none; }
+  }
+  @media (max-width:480px) { .stats { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script>
+"use strict";
+
+/* ── Client-side label maps (server sends ids) ── */
+const STR = {
+  en: {
+    internal:"Indigo Cars · internal", roleManager:"Lead manager", roleOperator:"Operator",
+    dashboard:"Dashboard", newLead:"New lead", leads:"Leads", myLeads:"My leads", logout:"Log out",
+    pipeline:"Pipeline", operatorLoad:"Operator load", recent:"Recent leads", viewAll:"View all",
+    totalLeads:"Total leads", newToday:"New today", inProgress:"In progress", conversion:"Won rate",
+    fullName:"Full name", phone:"Phone", email:"Email", channel:"Contact channel",
+    branch:"City / branch", service:"Service", car:"Car of interest", budget:"Budget",
+    source:"Lead source", notes:"Notes", followUp:"Follow-up date",
+    save:"Save lead", saving:"Saving…", cancel:"Cancel", autoAssign:"Auto-assign (round robin)", assignSelf:"Assigned to you",
+    assignedTo:"Assigned to", status:"Status", back:"Back to leads", history:"Activity",
+    moveStatus:"Move status", searchPlaceholder:"Search by name, phone or car", all:"All",
+    created:"Created", saved:"Lead saved and assigned to ", results:" leads",
+    openLeads:"open", unassigned:"Unassigned", none:"No leads yet.",
+    signIn:"Sign in", loginTitle:"Sign in", loginSub:"Indigo Cars lead portal", signingIn:"Signing in…",
+    password:"Password", thisMonth:"This month",
+    team:"Team", changePassword:"Change password", currentPassword:"Current password",
+    newPassword:"New password", confirmPassword:"Confirm new password", updatePassword:"Update password",
+    passwordChanged:"Your password has been updated.", passwordMismatch:"The new passwords don't match.",
+    passwordShort:"New password must be at least 8 characters.",
+    mustChangeTitle:"Set a new password", mustChangeSub:"For security, choose your own password before continuing.",
+    addUser:"Add user", createUser:"Create user", role:"Role", manager:"Manager", operator:"Operator",
+    active:"Active", inactive:"Inactive", activate:"Activate", deactivate:"Deactivate",
+    resetPassword:"Reset password", tempPasswordFor:"Temporary password for ",
+    copy:"Copy", copied:"Copied", dismiss:"Dismiss", userCreated:"User created. Share this one-time password privately:",
+    tempPasswordReset:"New one-time password — share it privately:", openLeadsCol:"Open", status:"Status",
+    confirmDeactivate:"Deactivate this user? Their leads stay assigned but they can't sign in.",
+    confirmReset:"Reset this user's password to a new temporary one?"
+  },
+  ka: {
+    internal:"Indigo Cars · შიდა სისტემა", roleManager:"ლიდების მენეჯერი", roleOperator:"ოპერატორი",
+    dashboard:"მთავარი", newLead:"ახალი ლიდი", leads:"ლიდები", myLeads:"ჩემი ლიდები", logout:"გასვლა",
+    pipeline:"ეტაპები", operatorLoad:"ოპერატორების დატვირთვა", recent:"ბოლო ლიდები", viewAll:"ყველას ნახვა",
+    totalLeads:"სულ ლიდები", newToday:"ახალი დღეს", inProgress:"მიმდინარე", conversion:"მოგებული",
+    fullName:"სახელი და გვარი", phone:"ტელეფონი", email:"ელ. ფოსტა", channel:"კომუნიკაციის არხი",
+    branch:"ქალაქი / ფილიალი", service:"სერვისი", car:"სასურველი ავტომობილი", budget:"ბიუჯეტი",
+    source:"ლიდის წყარო", notes:"შენიშვნა", followUp:"შემდეგი კონტაქტი",
+    save:"ლიდის შენახვა", saving:"ინახება…", cancel:"გაუქმება", autoAssign:"ავტომატური მიმაგრება (რიგრიგობით)", assignSelf:"მიმაგრებულია თქვენზე",
+    assignedTo:"მიმაგრებული", status:"სტატუსი", back:"ლიდებზე დაბრუნება", history:"აქტივობა",
+    moveStatus:"სტატუსის შეცვლა", searchPlaceholder:"ძებნა სახელით, ნომრით ან ავტომობილით", all:"ყველა",
+    created:"შექმნილია", saved:"ლიდი შენახულია და მიმაგრებულია: ", results:" ლიდი",
+    openLeads:"აქტიური", unassigned:"მიუმაგრებელი", none:"ჯერ ლიდები არ არის.",
+    signIn:"შესვლა", loginTitle:"შესვლა", loginSub:"Indigo Cars ლიდების პორტალი", signingIn:"შესვლა…",
+    password:"პაროლი", thisMonth:"ამ თვეში",
+    team:"გუნდი", changePassword:"პაროლის შეცვლა", currentPassword:"მიმდინარე პაროლი",
+    newPassword:"ახალი პაროლი", confirmPassword:"გაიმეორეთ ახალი პაროლი", updatePassword:"პაროლის განახლება",
+    passwordChanged:"პაროლი განახლდა.", passwordMismatch:"ახალი პაროლები არ ემთხვევა.",
+    passwordShort:"პაროლი უნდა შეიცავდეს მინიმუმ 8 სიმბოლოს.",
+    mustChangeTitle:"დააყენეთ ახალი პაროლი", mustChangeSub:"უსაფრთხოებისთვის, გაგრძელებამდე შეარჩიეთ საკუთარი პაროლი.",
+    addUser:"მომხმარებლის დამატება", createUser:"შექმნა", role:"როლი", manager:"მენეჯერი", operator:"ოპერატორი",
+    active:"აქტიური", inactive:"არააქტიური", activate:"გააქტიურება", deactivate:"დეაქტივაცია",
+    resetPassword:"პაროლის განულება", tempPasswordFor:"დროებითი პაროლი: ",
+    copy:"კოპირება", copied:"დაკოპირდა", dismiss:"დახურვა", userCreated:"მომხმარებელი შეიქმნა. გადაეცით ეს ერთჯერადი პაროლი პირადად:",
+    tempPasswordReset:"ახალი ერთჯერადი პაროლი — გადაეცით პირადად:", openLeadsCol:"აქტიური", status:"სტატუსი",
+    confirmDeactivate:"დავადეაქტიუროთ ეს მომხმარებელი? მისი ლიდები დარჩება, თუმცა ვეღარ შევა სისტემაში.",
+    confirmReset:"განულდეს ამ მომხმარებლის პაროლი ახალ დროებით პაროლზე?"
+  }
+};
+const SERVICES = [
+  { id:"import", en:"Selection & purchase", ka:"შერჩევა-შეძენა" },
+  { id:"leasing", en:"Leasing", ka:"ლიზინგი" },
+  { id:"dealer", en:"Dealer service", ka:"სერვისი დილერებს" },
+  { id:"spares", en:"Dismantling / spares", ka:"ავტომობილის დაჭრა" }
+];
+const STATUSES = [
+  { id:"new", en:"New", ka:"ახალი", bg:"#EDEBFB", fg:"#4A3BD0", bar:"#5B4BE0" },
+  { id:"contacted", en:"Contacted", ka:"დაკავშირებული", bg:"#FFF4DE", fg:"#9A6B06", bar:"#E0A11B" },
+  { id:"quoted", en:"Quoted", ka:"შეთავაზება", bg:"#E6F1FE", fg:"#1D5FA8", bar:"#2E7CD6" },
+  { id:"won", en:"Won", ka:"მოგებული", bg:"#E4F5EC", fg:"#146A48", bar:"#1F9D6B" },
+  { id:"lost", en:"Lost", ka:"დაკარგული", bg:"#FDECEC", fg:"#A83A3A", bar:"#D14B4B" }
+];
+const BRANCHES = ["Tbilisi · Avlabari","Gori","Kutaisi","Batumi","Marneuli","USA · Keyport NJ"];
+const SOURCES = ["Website form","Facebook","Instagram","WhatsApp","Viber","TikTok","Phone call","Walk-in","Referral"];
+const CHANNELS = ["Phone","WhatsApp","Viber","Email"];
+const EMPTY = { name:"", phone:"", email:"", channel:"Phone", branch:BRANCHES[0], service:"import", car:"", budget:"", source:SOURCES[0], notes:"", followUp:"" };
+
+/* ── State ── */
+const state = {
+  lang: localStorage.getItem("indigo-lang") || "en",
+  token: localStorage.getItem("indigo-token") || null,
+  user: null,
+  view: "dashboard",
+  form: { ...EMPTY },
+  filter: "all", query: "", toast: null, operators: [],
+  newUser: { name:"", email:"", role:"operator", branch:BRANCHES[0] },
+  lastCredential: null
+};
+
+/* ── Helpers ── */
+const t = () => STR[state.lang] || STR.en;
+const svc = id => { const s = SERVICES.find(x => x.id === id) || SERVICES[0]; return s[state.lang] || s.en; };
+const st = id => STATUSES.find(x => x.id === id) || STATUSES[0];
+const stLabel = id => { const s = st(id); return s[state.lang] || s.en; };
+const initials = n => (n||"").split(/\s+/).slice(0,2).map(w => w[0]||"").join("").toUpperCase();
+const esc = s => String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;").replace(/'/g,"&#39;");
+const $ = sel => document.querySelector(sel);
+const el = id => document.getElementById(id);
+
+function fmtDateTime(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso); if (isNaN(d)) return esc(iso);
+  const mon = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];
+  const p = n => String(n).padStart(2,"0");
+  return d.getDate()+" "+mon+", "+p(d.getHours())+":"+p(d.getMinutes());
+}
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso); if (isNaN(d)) return esc(iso);
+  const mon = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getMonth()];
+  return d.getDate()+" "+mon+" "+d.getFullYear();
+}
+function badge(statusId) {
+  const s = st(statusId);
+  return '<span class="badge" style="background:'+s.bg+';color:'+s.fg+'">'+esc(stLabel(statusId))+'</span>';
+}
+
+/* ── API ── */
+async function api(path, opts) {
+  opts = opts || {};
+  const headers = Object.assign({ "Content-Type":"application/json" }, opts.headers || {});
+  if (state.token) headers["Authorization"] = "Bearer " + state.token;
+  let res;
+  try {
+    res = await fetch(path, { method: opts.method || "GET", headers, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  } catch (e) {
+    throw new Error("Network error — check your connection.");
+  }
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* non-JSON */ }
+  // A 401 on a normal request means the session token is stale → sign out.
+  // The login call is exempt: there a 401 is just wrong credentials.
+  const isLogin = path.indexOf("/api/login") !== -1;
+  if (res.status === 401 && !isLogin) {
+    logout();
+    throw new Error((data && data.error) || "Session expired. Please sign in again.");
+  }
+  if (!res.ok) throw new Error((data && data.error) || ("Request failed (" + res.status + ")"));
+  return data;
+}
+
+function logout() {
+  state.token = null; state.user = null;
+  localStorage.removeItem("indigo-token");
+  renderLogin();
+}
+
+/* ══════════════ LOGIN ══════════════ */
+function renderLogin(errorMsg) {
+  const tr = t();
+  el("root").innerHTML =
+    '<div class="login-wrap"><form class="login-card" id="login-form">' +
+      '<div class="login-brand"><div class="brand-mark">IC</div>' +
+        '<div><b>INDIGO</b><span>CARS</span></div></div>' +
+      '<div class="login-title">'+esc(tr.loginTitle)+'</div>' +
+      '<div class="login-sub">'+esc(tr.loginSub)+'</div>' +
+      '<div class="login-error'+(errorMsg?' show':'')+'" id="login-error">'+esc(errorMsg||"")+'</div>' +
+      '<label><span class="field-label">'+esc(tr.email)+'</span>' +
+        '<input class="field-input" id="login-email" type="email" autocomplete="username" required></label>' +
+      '<label><span class="field-label">'+esc(tr.password)+'</span>' +
+        '<input class="field-input" id="login-password" type="password" autocomplete="current-password" required></label>' +
+      '<button type="submit" class="btn-full" id="login-btn">'+esc(tr.signIn)+'</button>' +
+    '</form></div>';
+
+  $("#login-form").onsubmit = async e => {
+    e.preventDefault();
+    const btn = el("login-btn");
+    const email = el("login-email").value.trim();
+    const password = el("login-password").value;
+    btn.disabled = true; btn.textContent = t().signingIn;
+    try {
+      const data = await api("/api/login", { method:"POST", body:{ email, password } });
+      state.token = data.token; state.user = data.user;
+      localStorage.setItem("indigo-token", data.token);
+      state.view = "dashboard";
+      await boot();
+    } catch (err) {
+      const box = el("login-error"); box.textContent = err.message; box.classList.add("show");
+      btn.disabled = false; btn.textContent = t().signIn;
+    }
+  };
+}
+
+/* ══════════════ APP SHELL ══════════════ */
+function renderShell(bodyHtml) {
+  const tr = t(), u = state.user;
+  const navItems = [
+    { id:"dashboard", label:tr.dashboard },
+    { id:"new", label:tr.newLead },
+    { id:"list", label:(u && u.role==="operator") ? tr.myLeads : tr.leads }
+  ];
+  if (u && u.role === "manager") navItems.push({ id:"users", label:tr.team });
+  const titles = { dashboard:tr.dashboard, new:tr.newLead, list:navItems[2].label, users:tr.team, password:tr.changePassword };
+  el("root").innerHTML =
+    '<div class="app">' +
+      '<aside class="sidebar">' +
+        '<div class="brand"><div class="brand-mark">IC</div><div class="brand-name"><b>INDIGO</b><span>CARS</span></div></div>' +
+        '<nav class="nav" id="nav">' + navItems.map(n =>
+          '<button type="button" class="'+((state.view===n.id||(n.id==="list"&&state.view==="detail"))?"active":"")+'" data-nav="'+n.id+'">'+esc(n.label)+'</button>'
+        ).join("") + '</nav>' +
+        '<div class="sidebar-foot">' +
+          '<div class="lang-switch"><button type="button" id="lang-ka" class="'+(state.lang==="ka"?"active":"")+'">KA</button>' +
+            '<button type="button" id="lang-en" class="'+(state.lang==="en"?"active":"")+'">EN</button></div>' +
+          '<div class="user"><div class="user-avatar">'+esc(initials(u?u.name:"?"))+'</div>' +
+            '<div class="user-info"><div class="user-name">'+esc(u?u.name:"")+'</div>' +
+            '<div style="display:flex;gap:10px"><button type="button" class="logout-btn" id="change-pw">'+esc(tr.changePassword)+'</button>' +
+            '<button type="button" class="logout-btn" id="logout">'+esc(tr.logout)+'</button></div></div></div>' +
+        '</div>' +
+      '</aside>' +
+      '<main class="main">' +
+        '<header class="page-head"><div><div class="kicker">'+esc(tr.internal)+'</div>' +
+          '<h1 id="page-title">'+esc(state.view==="detail" ? "" : (titles[state.view]||tr.dashboard))+'</h1></div>' +
+          '<button type="button" class="btn-primary" id="btn-new">+ '+esc(tr.newLead)+'</button></header>' +
+        (state.toast ? '<div class="toast">'+esc(state.toast)+'</div>' : '') +
+        '<div id="view">'+bodyHtml+'</div>' +
+      '</main>' +
+    '</div>';
+
+  $("#nav").querySelectorAll("button").forEach(b => b.onclick = () => goto(b.dataset.nav));
+  el("btn-new").onclick = () => goto("new");
+  el("logout").onclick = logout;
+  const cpw = el("change-pw"); if (cpw) cpw.onclick = () => goto("password");
+  el("lang-ka").onclick = () => setLang("ka");
+  el("lang-en").onclick = () => setLang("en");
+}
+
+function setLang(lang) {
+  state.lang = lang;
+  localStorage.setItem("indigo-lang", lang);
+  document.documentElement.lang = lang;
+  route();
+}
+function goto(view, id) {
+  state.toast = null; state.view = view; state.selectedId = id || null;
+  window.scrollTo({ top:0 });
+  route();
+}
+function loading() { renderShell('<div class="spinner"></div>'); }
+function showError(msg) { renderShell('<div class="banner-error">'+esc(msg)+'</div>'); }
+
+/* ══════════════ ROUTES ══════════════ */
+async function route() {
+  if (!state.token) return renderLogin();
+  // Force a first-login password change before anything else.
+  if (state.user && state.user.mustChange && state.view !== "password") state.view = "password";
+  loading();
+  try {
+    if (state.view === "password") viewPassword();
+    else if (state.view === "users") await viewUsers();
+    else if (state.view === "dashboard") await viewDashboard();
+    else if (state.view === "new") await viewNew();
+    else if (state.view === "list") await viewList();
+    else if (state.view === "detail") await viewDetail(state.selectedId);
+    else await viewDashboard();
+  } catch (err) {
+    if (state.token) showError(err.message);
+  }
+}
+
+async function viewDashboard() {
+  const tr = t();
+  const d = await api("/api/dashboard");
+  const s = d.stats;
+  const maxCount = Math.max(1, ...d.pipeline.map(p => p.count));
+  const isManager = d.role === "manager";
+
+  const stats = [
+    { label:tr.totalLeads, value:s.total, hint:tr.thisMonth },
+    { label:tr.newToday, value:s.newToday, hint:"" },
+    { label:tr.inProgress, value:s.inProgress, hint:tr.openLeads },
+    { label:tr.conversion, value:(s.wonRate==null?"—":s.wonRate+"%"), hint:s.won+" / "+s.closed }
+  ];
+
+  let html = '<div class="stack">' +
+    '<div class="stats">' + stats.map(x =>
+      '<div class="stat"><div class="stat-label">'+esc(x.label)+'</div>' +
+      '<div class="stat-value">'+esc(x.value)+'</div>' +
+      '<div class="stat-hint">'+esc(x.hint)+'</div></div>').join("") + '</div>' +
+    '<div class="dash-grid">' +
+      '<section class="card"><h2>'+esc(tr.pipeline)+'</h2><div class="pipe-rows">' +
+        d.pipeline.map(p => {
+          const s0 = st(p.id); const w = Math.round((p.count/maxCount)*100);
+          return '<div class="pipe-row"><div class="pipe-label">'+esc(stLabel(p.id))+'</div>' +
+            '<div class="pipe-track"><div class="pipe-bar" style="width:'+w+'%;background:'+s0.bar+'"></div></div>' +
+            '<div class="pipe-count">'+p.count+'</div></div>';
+        }).join("") + '</div></section>';
+
+  if (isManager) {
+    html += '<section class="card"><h2>'+esc(tr.operatorLoad)+'</h2><div class="op-rows">' +
+      d.operatorLoad.map(o =>
+        '<div class="op-row"><div><div class="op-name">'+esc(o.name)+'</div>' +
+        '<div class="op-branch">'+esc(o.branch||"")+'</div></div>' +
+        '<div class="op-open">'+o.open+" "+esc(tr.openLeads)+'</div></div>').join("") +
+      '</div></section>';
+  } else {
+    html += '<section class="card"><h2>'+esc(tr.recent)+'</h2><div class="op-rows">' +
+      d.recent.slice(0,5).map(r =>
+        '<div class="op-row"><div><div class="op-name">'+esc(r.name)+'</div>' +
+        '<div class="op-branch">'+esc(svc(r.service))+'</div></div>'+badge(r.status)+'</div>').join("") +
+      '</div></section>';
+  }
+  html += '</div>';
+
+  html += '<section class="card"><div class="section-head"><h2>'+esc(tr.recent)+'</h2>' +
+    '<button type="button" class="link-btn" id="view-all">'+esc(tr.viewAll)+' →</button></div><div>' +
+    (d.recent.length ? d.recent.map(r =>
+      '<button type="button" class="recent-row" data-open="'+r.id+'">' +
+      '<div><div class="cell-name">'+esc(r.name)+'</div><div class="cell-phone">'+esc(r.phone||"")+'</div></div>' +
+      '<div class="cell-dim">'+esc(svc(r.service))+'</div>' +
+      '<div class="cell-dim col-operator">'+esc(r.operator||tr.unassigned)+'</div>'+badge(r.status)+'</button>'
+    ).join("") : '<div class="muted-note">'+esc(tr.none)+'</div>') + '</div></section>';
+  html += '</div>';
+
+  renderShell(html);
+  el("page-title").textContent = tr.dashboard;
+  const va = el("view-all"); if (va) va.onclick = () => goto("list");
+  $("#view").querySelectorAll("[data-open]").forEach(b => b.onclick = () => goto("detail", Number(b.dataset.open)));
+}
+
+async function viewNew() {
+  const tr = t();
+  if (state.user.role === "manager" && !state.operators.length) {
+    try { state.operators = (await api("/api/operators")).operators; } catch (e) { /* non-fatal */ }
+  }
+  const f = state.form;
+  const input = (key,label,ph,type) =>
+    '<label><span class="field-label">'+esc(label)+'</span>' +
+    '<input class="field-input" data-form="'+key+'" type="'+(type||"text")+'" value="'+esc(f[key])+'"'+(ph?' placeholder="'+esc(ph)+'"':'')+'></label>';
+
+  const html =
+    '<form class="lead-form" id="lead-form">' +
+      '<div class="form-grid">' +
+        input("name",tr.fullName,"Giorgi Kapanadze") + input("phone",tr.phone,"+995 5XX XX XX XX") +
+        input("email",tr.email,"name@example.com") +
+        '<div><span class="field-label">'+esc(tr.channel)+'</span><div class="chips">' +
+          CHANNELS.map(c => '<button type="button" class="chip '+(f.channel===c?"active":"")+'" data-channel="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div></div>' +
+        '<label><span class="field-label">'+esc(tr.branch)+'</span><select class="field-input" data-form="branch">' +
+          BRANCHES.map(b => '<option'+(f.branch===b?" selected":"")+'>'+esc(b)+'</option>').join("")+'</select></label>' +
+        '<label><span class="field-label">'+esc(tr.service)+'</span><select class="field-input" data-form="service">' +
+          SERVICES.map(s => '<option value="'+s.id+'"'+(f.service===s.id?" selected":"")+'>'+esc(s[state.lang]||s.en)+'</option>').join("")+'</select></label>' +
+        input("car",tr.car,"2021 Hyundai Tucson") + input("budget",tr.budget,"$ 12 000") +
+        '<label><span class="field-label">'+esc(tr.source)+'</span><select class="field-input" data-form="source">' +
+          SOURCES.map(s => '<option'+(f.source===s?" selected":"")+'>'+esc(s)+'</option>').join("")+'</select></label>' +
+        input("followUp",tr.followUp,"","date") +
+      '</div>' +
+      '<label><span class="field-label">'+esc(tr.notes)+'</span><textarea class="field-input" data-form="notes" rows="4">'+esc(f.notes)+'</textarea></label>' +
+      '<div class="form-foot">' +
+        '<div class="assign-preview"><div class="assign-avatar">'+esc(state.user.role==="operator"?initials(state.user.name):"RR")+'</div>' +
+          '<div><div class="assign-label">'+esc(state.user.role==="operator"?tr.assignSelf:tr.autoAssign)+'</div>' +
+          '<div class="assign-name">'+esc(state.user.role==="operator"?state.user.name:(state.operators.length?state.operators.length+" operators":""))+'</div></div></div>' +
+        '<div style="display:flex;gap:10px"><button type="button" class="btn-secondary" id="form-cancel">'+esc(tr.cancel)+'</button>' +
+          '<button type="submit" class="btn-save" id="form-save">'+esc(tr.save)+'</button></div>' +
+      '</div>' +
+    '</form>';
+
+  renderShell(html);
+  el("page-title").textContent = tr.newLead;
+
+  $("#view").querySelectorAll("[data-form]").forEach(e0 => {
+    const ev = () => { state.form[e0.dataset.form] = e0.value; };
+    e0.addEventListener("input", ev); e0.addEventListener("change", ev);
+  });
+  $("#view").querySelectorAll("[data-channel]").forEach(b => b.onclick = () => { state.form.channel = b.dataset.channel; route(); });
+  el("form-cancel").onclick = () => { state.form = { ...EMPTY }; goto("list"); };
+  $("#lead-form").onsubmit = async e => {
+    e.preventDefault();
+    const f2 = state.form;
+    if (!f2.name.trim() && !f2.phone.trim()) return;
+    const btn = el("form-save"); btn.disabled = true; btn.textContent = t().saving;
+    try {
+      const r = await api("/api/leads", { method:"POST", body:f2 });
+      state.form = { ...EMPTY };
+      // Navigate directly (goto clears the toast) so the confirmation shows.
+      state.view = "detail"; state.selectedId = r.id;
+      state.toast = t().saved + (r.operatorName || "");
+      window.scrollTo({ top:0 });
+      route();
+    } catch (err) {
+      btn.disabled = false; btn.textContent = t().save;
+      alert(err.message);
+    }
+  };
+}
+
+async function viewList() {
+  const tr = t();
+  const params = new URLSearchParams();
+  if (state.query.trim()) params.set("q", state.query.trim());
+  if (state.filter !== "all") params.set("status", state.filter);
+  const d = await api("/api/leads" + (params.toString() ? "?"+params.toString() : ""));
+  const filterDefs = [{ id:"all", label:tr.all }].concat(STATUSES.map(s => ({ id:s.id, label:s[state.lang]||s.en })));
+
+  const html = '<div class="stack" style="gap:18px">' +
+    '<div class="list-tools">' +
+      '<input class="search-input" id="search" value="'+esc(state.query)+'" placeholder="'+esc(tr.searchPlaceholder)+'">' +
+      '<div class="chips">' + filterDefs.map(fd =>
+        '<button type="button" class="chip '+(state.filter===fd.id?"active":"")+'" data-filter="'+fd.id+'">'+esc(fd.label)+'</button>').join("")+'</div>' +
+    '</div>' +
+    '<div class="table-wrap"><div class="table-head">' +
+      '<div>'+esc(tr.fullName)+'</div><div>'+esc(tr.service)+'</div><div>'+esc(tr.car)+'</div>' +
+      '<div>'+esc(tr.branch)+'</div><div>'+esc(tr.assignedTo)+'</div><div>'+esc(tr.status)+'</div></div>' +
+      (d.leads.length ? d.leads.map(l =>
+        '<button type="button" class="table-row" data-open="'+l.id+'">' +
+        '<div><div class="cell-name">'+esc(l.name)+'</div><div class="cell-phone">'+esc(l.phone||"")+'</div></div>' +
+        '<div class="cell-dim">'+esc(svc(l.service))+'</div><div class="cell-dim">'+esc(l.car||"—")+'</div>' +
+        '<div class="cell-dim">'+esc(l.branch||"—")+'</div><div class="cell-dim">'+esc(l.operator||tr.unassigned)+'</div>' +
+        badge(l.status)+'</button>').join("") : '<div class="muted-note" style="padding:24px">'+esc(tr.none)+'</div>') +
+    '</div>' +
+    '<div class="count-label">'+d.leads.length+esc(tr.results)+'</div></div>';
+
+  renderShell(html);
+  el("page-title").textContent = (state.user.role==="operator") ? tr.myLeads : tr.leads;
+
+  const search = el("search");
+  let debounce;
+  search.addEventListener("input", () => {
+    state.query = search.value;
+    clearTimeout(debounce);
+    debounce = setTimeout(async () => {
+      const pos = search.selectionStart;
+      await viewList();
+      const s2 = el("search"); if (s2) { s2.focus(); s2.setSelectionRange(pos, pos); }
+    }, 250);
+  });
+  $("#view").querySelectorAll("[data-filter]").forEach(b => b.onclick = () => { state.filter = b.dataset.filter; goto("list"); });
+  $("#view").querySelectorAll("[data-open]").forEach(b => b.onclick = () => goto("detail", Number(b.dataset.open)));
+}
+
+async function viewDetail(id) {
+  const tr = t();
+  const d = await api("/api/leads/" + id);
+  const lead = d.lead;
+  const isManager = state.user.role === "manager";
+  if (isManager && !state.operators.length) {
+    try { state.operators = (await api("/api/operators")).operators; } catch (e) { /* non-fatal */ }
+  }
+  const fields = [
+    { label:tr.phone, value:lead.phone||"—" }, { label:tr.email, value:lead.email||"—" },
+    { label:tr.channel, value:lead.channel||"—" }, { label:tr.branch, value:lead.branch||"—" },
+    { label:tr.service, value:svc(lead.service) }, { label:tr.car, value:lead.car||"—" },
+    { label:tr.budget, value:lead.budget||"—" }, { label:tr.followUp, value:lead.followUp?fmtDate(lead.followUp):"—" }
+  ];
+
+  const reassignHtml = isManager ?
+    '<select class="reassign-select" id="reassign">' +
+      state.operators.map(o => '<option value="'+o.id+'"'+(lead.operatorId===o.id?" selected":"")+'>'+esc(o.name)+'</option>').join("") +
+    '</select>' : '';
+
+  const html = '<div class="detail-grid">' +
+    '<section class="detail-card"><div class="detail-head"><div>' +
+      '<button type="button" class="back-btn" id="back">← '+esc(tr.back)+'</button>' +
+      '<div class="detail-name">'+esc(lead.name)+'</div>' +
+      '<div class="detail-meta">'+esc(tr.created)+' '+fmtDateTime(lead.createdAt)+' · '+esc(lead.source||"—")+'</div>' +
+    '</div>'+badge(lead.status)+'</div>' +
+    '<div class="fields-grid">' + fields.map(fd =>
+      '<div><div class="f-label">'+esc(fd.label)+'</div><div class="f-value">'+esc(fd.value)+'</div></div>').join("") + '</div>' +
+    '<div><div class="f-label" style="margin-bottom:8px">'+esc(tr.notes)+'</div>' +
+      '<div class="notes-box">'+esc(lead.notes||"—")+'</div></div></section>' +
+    '<aside class="side-stack">' +
+      '<section class="card"><div class="side-title">'+esc(tr.moveStatus)+'</div><div class="status-actions">' +
+        STATUSES.map(s => {
+          const active = lead.status===s.id;
+          const style = active ? ' style="background:'+s.bg+';color:'+s.fg+';border-color:'+s.bg+'"' : '';
+          return '<button type="button" class="status-btn" data-status="'+s.id+'"'+style+'>'+esc(s[state.lang]||s.en)+'</button>';
+        }).join("") + '</div></section>' +
+      '<section class="card"><div class="side-title">'+esc(tr.assignedTo)+'</div>' +
+        '<div class="assignee"><div class="assignee-avatar">'+esc(initials(lead.operator||"?"))+'</div>' +
+          '<div><div class="assignee-name">'+esc(lead.operator||tr.unassigned)+'</div>' +
+          '<div class="assignee-branch">'+esc(lead.operatorBranch||"—")+'</div></div></div>' + reassignHtml +
+      '</section>' +
+      '<section class="card"><div class="side-title">'+esc(tr.history)+'</div><div class="history">' +
+        d.history.map(h => '<div class="history-item"><div class="history-dot"></div><div>' +
+          '<div class="history-text">'+esc(h.text)+'</div><div class="history-at">'+fmtDateTime(h.created_at)+'</div></div></div>').join("") +
+      '</div></section>' +
+    '</aside></div>';
+
+  renderShell(html);
+  el("page-title").textContent = "#" + lead.id;
+  el("back").onclick = () => goto("list");
+  $("#view").querySelectorAll("[data-status]").forEach(b => b.onclick = async () => {
+    if (lead.status === b.dataset.status) return;
+    try { await api("/api/leads/"+id, { method:"PATCH", body:{ status:b.dataset.status } }); route(); }
+    catch (err) { alert(err.message); }
+  });
+  const rs = el("reassign");
+  if (rs) rs.onchange = async e => {
+    try { await api("/api/leads/"+id, { method:"PATCH", body:{ operatorId:Number(e.target.value) } }); state.operators = []; route(); }
+    catch (err) { alert(err.message); }
+  };
+}
+
+/* ══════════════ CHANGE PASSWORD ══════════════ */
+function viewPassword() {
+  const tr = t();
+  const forced = !!(state.user && state.user.mustChange);
+  const html =
+    '<form class="lead-form" id="pw-form" style="max-width:480px">' +
+      (forced ? '<div><div style="font-size:18px;font-weight:800;letter-spacing:-.01em">'+esc(tr.mustChangeTitle)+'</div>' +
+        '<div style="font-size:13px;color:var(--muted);margin-top:6px">'+esc(tr.mustChangeSub)+'</div></div>' : '') +
+      '<div class="banner-error" id="pw-error" style="display:none"></div>' +
+      '<label><span class="field-label">'+esc(tr.currentPassword)+'</span>' +
+        '<input class="field-input" id="pw-current" type="password" autocomplete="current-password"></label>' +
+      '<label><span class="field-label">'+esc(tr.newPassword)+'</span>' +
+        '<input class="field-input" id="pw-new" type="password" autocomplete="new-password"></label>' +
+      '<label><span class="field-label">'+esc(tr.confirmPassword)+'</span>' +
+        '<input class="field-input" id="pw-confirm" type="password" autocomplete="new-password"></label>' +
+      '<div style="display:flex;gap:10px;justify-content:flex-end">' +
+        (forced ? '' : '<button type="button" class="btn-secondary" id="pw-cancel">'+esc(tr.cancel)+'</button>') +
+        '<button type="submit" class="btn-save" id="pw-save">'+esc(tr.updatePassword)+'</button></div>' +
+    '</form>';
+  renderShell(html);
+  el("page-title").textContent = tr.changePassword;
+
+  const cancel = el("pw-cancel"); if (cancel) cancel.onclick = () => goto("dashboard");
+  $("#pw-form").onsubmit = async e => {
+    e.preventDefault();
+    const cur = el("pw-current").value, nw = el("pw-new").value, cf = el("pw-confirm").value;
+    const errBox = el("pw-error");
+    const fail = m => { errBox.textContent = m; errBox.style.display = "block"; };
+    if (nw.length < 8) return fail(tr.passwordShort);
+    if (nw !== cf) return fail(tr.passwordMismatch);
+    const btn = el("pw-save"); btn.disabled = true; btn.textContent = tr.saving;
+    try {
+      const r = await api("/api/password", { method:"POST", body:{ currentPassword:cur, newPassword:nw } });
+      if (r.token) { state.token = r.token; localStorage.setItem("indigo-token", r.token); }
+      state.user.mustChange = false;
+      state.view = "dashboard"; state.selectedId = null;
+      state.toast = tr.passwordChanged;
+      window.scrollTo({ top:0 });
+      route();
+    } catch (err) {
+      btn.disabled = false; btn.textContent = tr.updatePassword;
+      fail(err.message);
+    }
+  };
+}
+
+/* ══════════════ TEAM (users admin) ══════════════ */
+function credentialBanner() {
+  const tr = t();
+  if (!state.lastCredential) return "";
+  const c = state.lastCredential;
+  return '<div class="toast" id="cred-banner" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">' +
+    '<div><div style="font-weight:700">'+esc(c.heading)+'</div>' +
+    '<div style="margin-top:4px">'+esc(c.email)+' — <code style="font-family:ui-monospace,monospace;font-weight:700">'+esc(c.tempPassword)+'</code></div></div>' +
+    '<div style="display:flex;gap:8px">' +
+      '<button type="button" class="btn-secondary" id="cred-copy">'+esc(tr.copy)+'</button>' +
+      '<button type="button" class="btn-secondary" id="cred-dismiss">'+esc(tr.dismiss)+'</button></div></div>';
+}
+
+async function viewUsers() {
+  const tr = t();
+  const d = await api("/api/users");
+  const nu = state.newUser;
+  const roleOpts = r => '<option value="operator"'+(r==="operator"?" selected":"")+'>'+esc(tr.operator)+'</option>' +
+                        '<option value="manager"'+(r==="manager"?" selected":"")+'>'+esc(tr.manager)+'</option>';
+  const branchOpts = b => BRANCHES.map(x => '<option'+(b===x?" selected":"")+'>'+esc(x)+'</option>').join("");
+
+  let html = '<div class="stack" style="gap:18px">';
+  html += credentialBanner();
+
+  // Add-user form
+  html += '<section class="card"><h2>'+esc(tr.addUser)+'</h2>' +
+    '<div class="form-grid" style="gap:16px">' +
+      '<label><span class="field-label">'+esc(tr.fullName)+'</span><input class="field-input" id="nu-name" value="'+esc(nu.name)+'" placeholder="Ana Melua"></label>' +
+      '<label><span class="field-label">'+esc(tr.email)+'</span><input class="field-input" id="nu-email" type="email" value="'+esc(nu.email)+'" placeholder="name@indigocars.ge"></label>' +
+      '<label><span class="field-label">'+esc(tr.role)+'</span><select class="field-input" id="nu-role">'+roleOpts(nu.role)+'</select></label>' +
+      '<label><span class="field-label">'+esc(tr.branch)+'</span><select class="field-input" id="nu-branch">'+branchOpts(nu.branch)+'</select></label>' +
+    '</div>' +
+    '<div style="display:flex;justify-content:flex-end;margin-top:18px">' +
+      '<button type="button" class="btn-save" id="nu-create">'+esc(tr.createUser)+'</button></div></section>';
+
+  // Users table
+  html += '<div class="table-wrap"><div class="table-head" style="grid-template-columns:1.5fr .9fr 1.1fr .8fr .5fr 1fr">' +
+    '<div>'+esc(tr.fullName)+'</div><div>'+esc(tr.role)+'</div><div>'+esc(tr.branch)+'</div>' +
+    '<div>'+esc(tr.status)+'</div><div>'+esc(tr.openLeadsCol)+'</div><div></div></div>';
+  html += d.users.map(u => {
+    const inactive = !u.active;
+    return '<div class="table-row" style="grid-template-columns:1.5fr .9fr 1.1fr .8fr .5fr 1fr;cursor:default'+(inactive?';opacity:.55':'')+'">' +
+      '<div><div class="cell-name">'+esc(u.name)+'</div><div class="cell-phone">'+esc(u.email)+'</div></div>' +
+      '<div><select class="reassign-select" data-role="'+u.id+'" style="padding:8px 10px;font-size:13px">'+roleOpts(u.role)+'</select></div>' +
+      '<div><select class="reassign-select" data-branch="'+u.id+'" style="padding:8px 10px;font-size:13px">'+branchOpts(u.branch||"")+'</select></div>' +
+      '<div>'+(inactive ? '<span class="badge" style="background:#F1F1F7;color:#7A7A93">'+esc(tr.inactive)+'</span>'
+                        : '<span class="badge" style="background:#E4F5EC;color:#146A48">'+esc(tr.active)+'</span>')+'</div>' +
+      '<div class="cell-dim" style="font-variant-numeric:tabular-nums">'+u.open_leads+'</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap">' +
+        '<button type="button" class="status-btn" data-reset="'+u.id+'" style="padding:8px 10px;font-size:12px;width:auto">'+esc(tr.resetPassword)+'</button>' +
+        '<button type="button" class="status-btn" data-active="'+u.id+'" data-cur="'+(u.active?1:0)+'" style="padding:8px 10px;font-size:12px;width:auto">'+esc(u.active?tr.deactivate:tr.activate)+'</button>' +
+      '</div></div>';
+  }).join("");
+  html += '</div></div>';
+
+  renderShell(html);
+  el("page-title").textContent = tr.team;
+
+  // credential banner actions
+  const cc = el("cred-copy"), cd = el("cred-dismiss");
+  if (cc) cc.onclick = async () => { try { await navigator.clipboard.writeText(state.lastCredential.tempPassword); cc.textContent = t().copied; } catch(e){} };
+  if (cd) cd.onclick = () => { state.lastCredential = null; route(); };
+
+  // add-user field capture
+  const bind = (id, key) => { const e0 = el(id); if (e0) e0.oninput = e0.onchange = () => { state.newUser[key] = e0.value; }; };
+  bind("nu-name","name"); bind("nu-email","email"); bind("nu-role","role"); bind("nu-branch","branch");
+  el("nu-create").onclick = async () => {
+    const btn = el("nu-create"); btn.disabled = true; btn.textContent = t().saving;
+    try {
+      const r = await api("/api/users", { method:"POST", body:state.newUser });
+      state.lastCredential = { heading:t().userCreated, email:r.email, tempPassword:r.tempPassword };
+      state.newUser = { name:"", email:"", role:"operator", branch:BRANCHES[0] };
+      state.operators = [];
+      route();
+    } catch (err) { btn.disabled = false; btn.textContent = t().createUser; alert(err.message); }
+  };
+
+  // row actions
+  $("#view").querySelectorAll("[data-role]").forEach(sel => sel.onchange = async () => {
+    try { await api("/api/users/"+sel.dataset.role, { method:"PATCH", body:{ role:sel.value } }); state.operators = []; route(); }
+    catch (err) { alert(err.message); route(); }
+  });
+  $("#view").querySelectorAll("[data-branch]").forEach(sel => sel.onchange = async () => {
+    try { await api("/api/users/"+sel.dataset.branch, { method:"PATCH", body:{ branch:sel.value } }); route(); }
+    catch (err) { alert(err.message); route(); }
+  });
+  $("#view").querySelectorAll("[data-active]").forEach(b => b.onclick = async () => {
+    const activating = b.dataset.cur === "0";
+    if (!activating && !confirm(t().confirmDeactivate)) return;
+    try { await api("/api/users/"+b.dataset.active, { method:"PATCH", body:{ active:activating } }); state.operators = []; route(); }
+    catch (err) { alert(err.message); }
+  });
+  $("#view").querySelectorAll("[data-reset]").forEach(b => b.onclick = async () => {
+    if (!confirm(t().confirmReset)) return;
+    try {
+      const r = await api("/api/users/"+b.dataset.reset, { method:"PATCH", body:{ resetPassword:true } });
+      const u = d.users.find(x => String(x.id) === b.dataset.reset);
+      state.lastCredential = { heading:t().tempPasswordReset, email:u?u.email:"", tempPassword:r.tempPassword };
+      route();
+    } catch (err) { alert(err.message); }
+  });
+}
+
+/* ══════════════ BOOT ══════════════ */
+async function boot() {
+  document.documentElement.lang = state.lang;
+  if (!state.token) return renderLogin();
+  loading();
+  try {
+    const me = await api("/api/me");
+    state.user = { id:me.id, name:me.name, role:me.role, branch:me.branch, mustChange:!!me.mustChange };
+    if (state.user.mustChange) state.view = "password";
+    await route();
+  } catch (err) {
+    // Token invalid/expired or backend unreachable → back to login.
+    logout();
+    if (!/sign in/i.test(err.message)) renderLogin(err.message);
+  }
+}
+
+boot();
+</script>
+</body>
+</html>

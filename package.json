@@ -1,0 +1,14 @@
+{
+  "name": "indigo-cars-portal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Indigo Cars internal lead-management portal — Vercel serverless API + MSSQL backend.",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "mssql": "^11.0.1"
+  }
+}
