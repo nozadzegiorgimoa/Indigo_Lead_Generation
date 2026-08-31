@@ -218,7 +218,18 @@ const STR = {
     copy:"Copy", copied:"Copied", dismiss:"Dismiss", userCreated:"User created. Share this one-time password privately:",
     tempPasswordReset:"New one-time password — share it privately:", openLeadsCol:"Open", status:"Status",
     confirmDeactivate:"Deactivate this user? Their leads stay assigned but they can't sign in.",
-    confirmReset:"Reset this user's password to a new temporary one?"
+    confirmReset:"Reset this user's password to a new temporary one?",
+    shortVersion:"Short", fullVersion:"Full", formMode:"Form",
+    speakingLanguage:"Speaking language", saleManager:"Sale manager",
+    selectGroup:"Select group…", selectOperator:"Select operator…", noOperator:"— not assigned —",
+    customerType:"Customer type", country:"Country", city:"City",
+    additionalComment:"Additional comment", chooseLanguage:"Choose a language…",
+    phoneInvalidTitle:"Phone number looks invalid",
+    phoneConfirm:"Save this lead anyway?",
+    dupTitle:"This phone number is already registered",
+    dupOpen:"Open existing lead", dupManager:"Manager", dupSource:"Source",
+    dupRegistered:"Registered", dupLast:"Last activity", dupStatus:"Status",
+    parsedPreview:"Detected from the comment"
   },
   ka: {
     internal:"Indigo Cars · შიდა სისტემა", roleManager:"ლიდების მენეჯერი", roleOperator:"ოპერატორი",
@@ -246,7 +257,18 @@ const STR = {
     copy:"კოპირება", copied:"დაკოპირდა", dismiss:"დახურვა", userCreated:"მომხმარებელი შეიქმნა. გადაეცით ეს ერთჯერადი პაროლი პირადად:",
     tempPasswordReset:"ახალი ერთჯერადი პაროლი — გადაეცით პირადად:", openLeadsCol:"აქტიური", status:"სტატუსი",
     confirmDeactivate:"დავადეაქტიუროთ ეს მომხმარებელი? მისი ლიდები დარჩება, თუმცა ვეღარ შევა სისტემაში.",
-    confirmReset:"განულდეს ამ მომხმარებლის პაროლი ახალ დროებით პაროლზე?"
+    confirmReset:"განულდეს ამ მომხმარებლის პაროლი ახალ დროებით პაროლზე?",
+    shortVersion:"მოკლე", fullVersion:"სრული", formMode:"ფორმა",
+    speakingLanguage:"სასაუბრო ენა", saleManager:"გაყიდვების მენეჯერი",
+    selectGroup:"აირჩიეთ ჯგუფი…", selectOperator:"აირჩიეთ ოპერატორი…", noOperator:"— მიუმაგრებელი —",
+    customerType:"მომხმარებლის ტიპი", country:"ქვეყანა", city:"ქალაქი",
+    additionalComment:"დამატებითი კომენტარი", chooseLanguage:"აირჩიეთ ენა…",
+    phoneInvalidTitle:"ტელეფონის ნომერი არავალიდურია",
+    phoneConfirm:"მაინც შევინახოთ ეს ლიდი?",
+    dupTitle:"ეს ნომერი უკვე რეგისტრირებულია",
+    dupOpen:"არსებული ლიდის გახსნა", dupManager:"მენეჯერი", dupSource:"წყარო",
+    dupRegistered:"რეგისტრირდა", dupLast:"ბოლო აქტივობა", dupStatus:"სტატუსი",
+    parsedPreview:"ამოცნობილია კომენტარიდან"
   }
 };
 const SERVICES = [
@@ -263,9 +285,21 @@ const STATUSES = [
   { id:"lost", en:"Lost", ka:"დაკარგული", bg:"#FDECEC", fg:"#A83A3A", bar:"#D14B4B" }
 ];
 const BRANCHES = ["Tbilisi · Avlabari","Gori","Kutaisi","Batumi","Marneuli","USA · Keyport NJ"];
-const SOURCES = ["Website form","Facebook","Instagram","WhatsApp","Viber","TikTok","Phone call","Walk-in","Referral"];
+const SOURCES = ["Website form","Facebook","Instagram","Meta Lead Form","WhatsApp","Viber","TikTok","Phone call","Walk-in","Referral"];
 const CHANNELS = ["Phone","WhatsApp","Viber","Email"];
-const EMPTY = { name:"", phone:"", email:"", channel:"Phone", branch:BRANCHES[0], service:"import", car:"", budget:"", source:SOURCES[0], notes:"", followUp:"" };
+const LANGS = [
+  { id:"georgian",  en:"Georgian",  ka:"ქართული" },
+  { id:"russian",   en:"Russian",   ka:"რუსული" },
+  { id:"ukrainian", en:"Ukrainian", ka:"უკრაინული" },
+  { id:"english",   en:"English",   ka:"ინგლისური" }
+];
+const CUSTOMER_TYPES = [
+  { id:"retail", en:"Retail", ka:"საცალო" },
+  { id:"dealer", en:"Dealer", ka:"სადილერო" }
+];
+const EMPTY = { name:"", phone:"", email:"", channel:"Phone", branch:BRANCHES[0], service:"import",
+  car:"", budget:"", source:SOURCES[0], notes:"", followUp:"",
+  language:"", customerType:"retail", country:"", city:"", saleGroupId:"", saleOperatorId:"" };
 
 /* ── State ── */
 const state = {
@@ -274,6 +308,7 @@ const state = {
   user: null,
   view: "dashboard",
   form: { ...EMPTY },
+  formMode: "short", saleGroups: [],
   filter: "all", query: "", toast: null, operators: [],
   newUser: { name:"", email:"", role:"operator", branch:BRANCHES[0] },
   lastCredential: null
@@ -511,67 +546,172 @@ async function viewDashboard() {
 
 async function viewNew() {
   const tr = t();
-  if (state.user.role === "manager" && !state.operators.length) {
-    try { state.operators = (await api("/api/operators")).operators; } catch (e) { /* non-fatal */ }
+  const mode = state.formMode;                       // 'short' | 'full'
+  // Grouped sale-operator roster (live from crm) for the Sale-manager picker.
+  if (!state.saleGroups.length) {
+    try { state.saleGroups = (await api("/api/sale-operators")).groups || []; } catch (e) { /* non-fatal */ }
   }
   const f = state.form;
   const input = (key,label,ph,type) =>
     '<label><span class="field-label">'+esc(label)+'</span>' +
     '<input class="field-input" data-form="'+key+'" type="'+(type||"text")+'" value="'+esc(f[key])+'"'+(ph?' placeholder="'+esc(ph)+'"':'')+'></label>';
+  const selectField = (key,label,opts) =>
+    '<label><span class="field-label">'+esc(label)+'</span><select class="field-input" data-form="'+key+'">'+opts+'</select></label>';
 
-  const html =
-    '<form class="lead-form" id="lead-form">' +
-      '<div class="form-grid">' +
-        input("name",tr.fullName,"Giorgi Kapanadze") + input("phone",tr.phone,"+995 5XX XX XX XX") +
-        input("email",tr.email,"name@example.com") +
-        '<div><span class="field-label">'+esc(tr.channel)+'</span><div class="chips">' +
-          CHANNELS.map(c => '<button type="button" class="chip '+(f.channel===c?"active":"")+'" data-channel="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div></div>' +
-        '<label><span class="field-label">'+esc(tr.branch)+'</span><select class="field-input" data-form="branch">' +
-          BRANCHES.map(b => '<option'+(f.branch===b?" selected":"")+'>'+esc(b)+'</option>').join("")+'</select></label>' +
-        '<label><span class="field-label">'+esc(tr.service)+'</span><select class="field-input" data-form="service">' +
-          SERVICES.map(s => '<option value="'+s.id+'"'+(f.service===s.id?" selected":"")+'>'+esc(s[state.lang]||s.en)+'</option>').join("")+'</select></label>' +
-        input("car",tr.car,"2021 Hyundai Tucson") + input("budget",tr.budget,"$ 12 000") +
-        '<label><span class="field-label">'+esc(tr.source)+'</span><select class="field-input" data-form="source">' +
-          SOURCES.map(s => '<option'+(f.source===s?" selected":"")+'>'+esc(s)+'</option>').join("")+'</select></label>' +
-        input("followUp",tr.followUp,"","date") +
-      '</div>' +
-      '<label><span class="field-label">'+esc(tr.notes)+'</span><textarea class="field-input" data-form="notes" rows="4">'+esc(f.notes)+'</textarea></label>' +
-      '<div class="form-foot">' +
-        '<div class="assign-preview"><div class="assign-avatar">'+esc(state.user.role==="operator"?initials(state.user.name):"RR")+'</div>' +
-          '<div><div class="assign-label">'+esc(state.user.role==="operator"?tr.assignSelf:tr.autoAssign)+'</div>' +
-          '<div class="assign-name">'+esc(state.user.role==="operator"?state.user.name:(state.operators.length?state.operators.length+" operators":""))+'</div></div></div>' +
-        '<div style="display:flex;gap:10px"><button type="button" class="btn-secondary" id="form-cancel">'+esc(tr.cancel)+'</button>' +
-          '<button type="submit" class="btn-save" id="form-save">'+esc(tr.save)+'</button></div>' +
-      '</div>' +
-    '</form>';
+  // ── Sale-manager grouped picker (group → operator) ──
+  const groupOpts = '<option value="">'+esc(tr.selectGroup)+'</option>' +
+    state.saleGroups.map(g => '<option value="'+g.id+'"'+(String(f.saleGroupId)===String(g.id)?" selected":"")+'>'+esc(g.name)+'</option>').join("");
+  const curGroup = state.saleGroups.find(g => String(g.id) === String(f.saleGroupId));
+  const opList = curGroup ? curGroup.operators : [];
+  const opOpts = '<option value="">'+esc(curGroup?tr.selectOperator:tr.noOperator)+'</option>' +
+    opList.map(o => '<option value="'+o.id+'"'+(String(f.saleOperatorId)===String(o.id)?" selected":"")+'>'+esc(o.name)+'</option>').join("");
+  const salePicker =
+    '<label><span class="field-label">'+esc(tr.saleManager)+'</span><select class="field-input" id="sale-group">'+groupOpts+'</select></label>' +
+    '<label><span class="field-label">&nbsp;</span><select class="field-input" id="sale-operator">'+opOpts+'</select></label>';
+
+  const langSelect = selectField("language", tr.speakingLanguage,
+    '<option value="">'+esc(tr.chooseLanguage)+'</option>' +
+    LANGS.map(l => '<option value="'+l.id+'"'+(f.language===l.id?" selected":"")+'>'+esc(l[state.lang]||l.en)+'</option>').join(""));
+  const notesField = '<label><span class="field-label">'+esc(tr.notes)+'</span>' +
+    '<textarea class="field-input" data-form="notes" rows="'+(mode==="short"?6:4)+'">'+esc(f.notes)+'</textarea></label>';
+
+  const toggle = '<div class="chips" style="margin-bottom:2px">' +
+    '<button type="button" class="chip '+(mode==="short"?"active":"")+'" data-mode="short">'+esc(tr.shortVersion)+'</button>' +
+    '<button type="button" class="chip '+(mode==="full"?"active":"")+'" data-mode="full">'+esc(tr.fullVersion)+'</button></div>';
+
+  let body;
+  if (mode === "short") {
+    body = '<div class="form-grid">' + salePicker + langSelect + '</div>' + notesField + '<div id="lead-hints"></div>';
+  } else {
+    body = '<div class="form-grid">' +
+      input("name",tr.fullName,"Giorgi Kapanadze") + input("phone",tr.phone,"+995 5XX XX XX XX") +
+      input("email",tr.email,"name@example.com") +
+      '<div><span class="field-label">'+esc(tr.channel)+'</span><div class="chips">' +
+        CHANNELS.map(c => '<button type="button" class="chip '+(f.channel===c?"active":"")+'" data-channel="'+esc(c)+'">'+esc(c)+'</button>').join("")+'</div></div>' +
+      selectField("branch", tr.branch, BRANCHES.map(b => '<option'+(f.branch===b?" selected":"")+'>'+esc(b)+'</option>').join("")) +
+      selectField("service", tr.service, SERVICES.map(s => '<option value="'+s.id+'"'+(f.service===s.id?" selected":"")+'>'+esc(s[state.lang]||s.en)+'</option>').join("")) +
+      langSelect +
+      selectField("customerType", tr.customerType, CUSTOMER_TYPES.map(c => '<option value="'+c.id+'"'+(f.customerType===c.id?" selected":"")+'>'+esc(c[state.lang]||c.en)+'</option>').join("")) +
+      input("country",tr.country,"") + input("city",tr.city,"") +
+      input("car",tr.car,"2021 Hyundai Tucson") + input("budget",tr.budget,"$ 12 000") +
+      selectField("source", tr.source, SOURCES.map(s => '<option'+(f.source===s?" selected":"")+'>'+esc(s)+'</option>').join("")) +
+      input("followUp",tr.followUp,"","date") +
+      salePicker +
+    '</div>' + notesField + '<div id="lead-hints"></div>';
+  }
+
+  const html = '<form class="lead-form" id="lead-form">' + toggle + body +
+    '<div class="form-foot">' +
+      '<div class="assign-preview"><div class="assign-avatar">'+esc(state.user.role==="operator"?initials(state.user.name):"RR")+'</div>' +
+        '<div><div class="assign-label">'+esc(state.user.role==="operator"?tr.assignSelf:tr.autoAssign)+'</div>' +
+        '<div class="assign-name">'+esc(state.user.role==="operator"?state.user.name:"")+'</div></div></div>' +
+      '<div style="display:flex;gap:10px"><button type="button" class="btn-secondary" id="form-cancel">'+esc(tr.cancel)+'</button>' +
+        '<button type="submit" class="btn-save" id="form-save">'+esc(tr.save)+'</button></div>' +
+    '</div>' +
+  '</form>';
 
   renderShell(html);
   el("page-title").textContent = tr.newLead;
 
+  // Bind simple fields.
   $("#view").querySelectorAll("[data-form]").forEach(e0 => {
     const ev = () => { state.form[e0.dataset.form] = e0.value; };
     e0.addEventListener("input", ev); e0.addEventListener("change", ev);
   });
   $("#view").querySelectorAll("[data-channel]").forEach(b => b.onclick = () => { state.form.channel = b.dataset.channel; route(); });
+  // Mode toggle (preserve entered data).
+  $("#view").querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { state.formMode = b.dataset.mode; route(); });
+  // Sale-manager picker.
+  const grpSel = el("sale-group"), opSel = el("sale-operator");
+  if (grpSel) grpSel.onchange = () => { state.form.saleGroupId = grpSel.value; state.form.saleOperatorId = ""; route(); };
+  if (opSel) opSel.onchange = () => { state.form.saleOperatorId = opSel.value; };
   el("form-cancel").onclick = () => { state.form = { ...EMPTY }; goto("list"); };
-  $("#lead-form").onsubmit = async e => {
-    e.preventDefault();
-    const f2 = state.form;
-    if (!f2.name.trim() && !f2.phone.trim()) return;
-    const btn = el("form-save"); btn.disabled = true; btn.textContent = t().saving;
+
+  // Live check (phone validity + duplicate + parsed preview) on comment/phone blur.
+  const runCheck = async () => {
     try {
-      const r = await api("/api/leads", { method:"POST", body:f2 });
-      state.form = { ...EMPTY };
-      // Navigate directly (goto clears the toast) so the confirmation shows.
-      state.view = "detail"; state.selectedId = r.id;
-      state.toast = t().saved + (r.operatorName || "");
-      window.scrollTo({ top:0 });
-      route();
-    } catch (err) {
-      btn.disabled = false; btn.textContent = t().save;
-      alert(err.message);
-    }
+      const p = new URLSearchParams({ mode });
+      if (mode === "short") p.set("notes", state.form.notes || "");
+      else p.set("phone", state.form.phone || "");
+      const r = await api("/api/lead-check?" + p.toString());
+      renderHints(r);
+    } catch (e) { /* non-fatal */ }
   };
+  const notesEl = $('#view textarea[data-form="notes"]');
+  if (notesEl && mode === "short") notesEl.addEventListener("blur", runCheck);
+  const phoneEl = $('#view input[data-form="phone"]');
+  if (phoneEl && mode === "full") phoneEl.addEventListener("blur", runCheck);
+
+  $("#lead-form").onsubmit = e => { e.preventDefault(); submitLead(false); };
+}
+
+function renderHints(r) {
+  const box = el("lead-hints"); if (!box) return;
+  const tr = t(); let html = "";
+  if (r && r.duplicate) {
+    const d = r.duplicate;
+    html += '<div class="banner-error" style="display:block;text-align:left">' +
+      '<strong>'+esc(tr.dupTitle)+'</strong><br>' +
+      esc(d.name || "#"+d.id) + ' · ' + esc(tr.dupManager)+': '+esc(d.manager||"—") +
+      ' · ' + esc(tr.dupSource)+': '+esc(d.source||"—") +
+      ' · ' + esc(tr.dupRegistered)+': '+esc(fmtDate(d.createdAt)) +
+      ' · ' + esc(tr.dupStatus)+': '+esc(stLabel(d.status)) +
+      '<br><button type="button" class="btn-secondary" id="dup-open" style="margin-top:8px">'+esc(tr.dupOpen)+'</button></div>';
+  } else if (r && r.phone && r.phone.found && !r.phone.valid) {
+    html += '<div class="banner-error" style="display:block">'+esc(tr.phoneInvalidTitle)+'</div>';
+  } else if (r && r.phone && r.phone.valid && r.phone.countryName) {
+    html += '<div class="assign-label" style="margin-top:6px">'+esc(r.phone.e164)+' · '+esc(r.phone.countryName)+'</div>';
+  }
+  if (r && r.parsed) {
+    const pz = r.parsed, bits = [];
+    if (pz.name) bits.push(esc(tr.fullName)+": "+esc(pz.name));
+    if (pz.source) bits.push(esc(tr.source)+": "+esc(pz.source));
+    if (pz.customerType) bits.push(esc(tr.customerType)+": "+esc(pz.customerType));
+    if (pz.country) bits.push(esc(tr.country)+": "+esc(pz.country));
+    if (pz.city) bits.push(esc(tr.city)+": "+esc(pz.city));
+    if (bits.length) html += '<div class="assign-label" style="margin-top:8px"><em>'+esc(tr.parsedPreview)+':</em> '+bits.join(" · ")+'</div>';
+  }
+  box.innerHTML = html;
+  const dupBtn = el("dup-open");
+  if (dupBtn && r.duplicate) dupBtn.onclick = () => { state.form = { ...EMPTY }; goto("detail", r.duplicate.id); };
+}
+
+async function submitLead(confirmInvalid) {
+  const tr = t(), mode = state.formMode, f2 = state.form;
+  if (mode === "short") { if (!(f2.notes || "").trim()) { alert(tr.notes + " —"); return; } }
+  else if (!(f2.name || "").trim() && !(f2.phone || "").trim()) return;
+
+  const btn = el("form-save"); if (btn) { btn.disabled = true; btn.textContent = tr.saving; }
+  const resetBtn = () => { if (btn) { btn.disabled = false; btn.textContent = tr.save; } };
+
+  const headers = { "Content-Type": "application/json" };
+  if (state.token) headers["Authorization"] = "Bearer " + state.token;
+  const body = Object.assign({}, f2, { formMode: mode, confirmInvalidPhone: !!confirmInvalid });
+
+  let res, data;
+  try {
+    res = await fetch("/api/leads", { method: "POST", headers, body: JSON.stringify(body) });
+    data = await res.json().catch(() => null);
+  } catch (e) { resetBtn(); alert("Network error — check your connection."); return; }
+
+  if (res.status === 401) { logout(); return; }
+  if (res.status === 422 && data && data.status === "invalid_phone") {
+    resetBtn();
+    if (confirm((data.message || tr.phoneInvalidTitle) + "\n\n" + tr.phoneConfirm)) submitLead(true);
+    return;
+  }
+  if (res.status === 409 && data && data.status === "duplicate") {
+    resetBtn(); renderHints({ duplicate: data.existing }); window.scrollTo({ top: 0 }); return;
+  }
+  if (!res.ok) { resetBtn(); alert((data && data.error) || ("Request failed (" + res.status + ")")); return; }
+
+  // Success.
+  state.form = { ...EMPTY };
+  state.view = "detail"; state.selectedId = data.id;
+  const who = data.saleOperator ? data.saleOperator.name : (data.operatorName || "");
+  state.toast = tr.saved + who;
+  window.scrollTo({ top: 0 });
+  route();
 }
 
 async function viewList() {

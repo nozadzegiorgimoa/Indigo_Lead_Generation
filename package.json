@@ -9,6 +9,7 @@
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "jsonwebtoken": "^9.0.2",
+    "libphonenumber-js": "^1.13.12",
     "mssql": "^11.0.1"
   }
 }

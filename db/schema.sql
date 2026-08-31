@@ -41,11 +41,24 @@ BEGIN
     status       NVARCHAR(20)   NOT NULL CONSTRAINT DF_leads_status DEFAULT ('new')
                    CONSTRAINT CK_leads_status CHECK (status IN ('new','contacted','quoted','won','lost')),
     operator_id  INT            NULL CONSTRAINT FK_leads_operator REFERENCES dbo.users(id),
+    -- Stage 1 (lead capture) additions:
+    language           NVARCHAR(20)  NULL,   -- 'georgian'|'russian'|'ukrainian'|'english'
+    customer_type      NVARCHAR(20)  NOT NULL CONSTRAINT DF_leads_customer_type DEFAULT ('retail'),
+    country            NVARCHAR(80)  NULL,
+    city               NVARCHAR(120) NULL,
+    phone_normalized   NVARCHAR(40)  NULL,   -- canonical digits for duplicate matching
+    sale_operator_id   INT           NULL,   -- crm.dbo.users.ID (separate population from portal users)
+    sale_operator_name NVARCHAR(225) NULL,
+    sale_group_id      INT           NULL,   -- crm.dbo.usersgroups.ID
+    sale_group_name    NVARCHAR(200) NULL,
+    additional_comment NVARCHAR(MAX) NULL,   -- leftover comment text after parsing (incl. sms tail)
+    form_mode          NVARCHAR(10)  NULL,   -- 'short'|'full'
     created_at   DATETIME2      NOT NULL CONSTRAINT DF_leads_created DEFAULT (SYSUTCDATETIME())
   );
   CREATE INDEX IX_leads_operator ON dbo.leads(operator_id);
   CREATE INDEX IX_leads_status   ON dbo.leads(status);
   CREATE INDEX IX_leads_created  ON dbo.leads(created_at DESC);
+  CREATE INDEX IX_leads_phone_norm ON dbo.leads(phone_normalized) WHERE phone_normalized IS NOT NULL;
 END;
 
 -- ---------- Activity history ----------
