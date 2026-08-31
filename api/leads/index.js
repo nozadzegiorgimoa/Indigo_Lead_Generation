@@ -5,6 +5,8 @@ const { requireUser, send, readJson } = require('../_auth');
 const { parseComment } = require('../_parse');
 const { analyzePhone } = require('../_phone');
 const { normalizeSource } = require('../_sources');
+const { distribute, getOperator } = require('../_distribute');
+const { setAssignment } = require('../_assign');
 
 const STATUS_IDS = ['new', 'contacted', 'quoted', 'won', 'lost'];
 const SERVICE_IDS = ['import', 'leasing', 'dealer', 'spares'];
@@ -105,16 +107,16 @@ module.exports = async (req, res) => {
       const additionalComment = shortMode ? (parsed.additionalComment || null)
                                           : ((b.additionalComment || '').trim() || null);
 
-      // ----- Chosen sale operator (crm.dbo.users), validated live -----
-      let saleOp = null;
+      // ----- Sale-operator assignment: manual pick wins, else auto-distribute (Stage 2) -----
+      let assignOp = null, assignMethod = null, assignReason = null;
       if (b.saleOperatorId) {
-        saleOp = (await pool.request().input('sid', sql.Int, Number(b.saleOperatorId)).query(
-          `SELECT u.ID AS id, u.Name AS name, g.ID AS group_id, g.Caption AS group_name
-             FROM crm.dbo.users u JOIN crm.dbo.usersgroups g ON g.ID = u.GroupID
-            WHERE u.ID = @sid AND g.Add3 = 1 AND u.Deleted IS NULL
-              AND u.IsBlocked = 0 AND u.IsDenyAccess = 0`
-        )).recordset[0] || null;
-        if (!saleOp) return send(res, 400, { error: 'The selected sale operator is not a valid active operator.' });
+        const picked = await getOperator(pool, sql, b.saleOperatorId);
+        if (!picked) return send(res, 400, { error: 'The selected sale operator is not a valid active operator.' });
+        assignOp = { id: picked.id, name: picked.name, groupId: picked.group_id, groupName: picked.group_name };
+        assignMethod = 'manual'; assignReason = 'manual pick at entry';
+      } else {
+        const d = await distribute(pool, sql, { language, customerType, country, city });
+        if (d) { assignOp = { id: d.operatorId, name: d.operatorName, groupId: d.groupId, groupName: d.groupName }; assignMethod = 'auto-rule'; assignReason = d.reason; }
       }
 
       // Portal assignment (role-scoping) stays as before; Stage 2 rewires routing.
@@ -152,25 +154,26 @@ module.exports = async (req, res) => {
         .input('city', sql.NVarChar(120), city)
         .input('additional', sql.NVarChar(sql.MAX), additionalComment)
         .input('formMode', sql.NVarChar(10), shortMode ? 'short' : 'full')
-        .input('saleOpId', sql.Int, saleOp ? saleOp.id : null)
-        .input('saleOpName', sql.NVarChar(225), saleOp ? saleOp.name : null)
-        .input('saleGroupId', sql.Int, saleOp ? saleOp.group_id : null)
-        .input('saleGroupName', sql.NVarChar(200), saleOp ? saleOp.group_name : null)
         .query(
           `INSERT INTO dbo.leads
              (name, phone, phone_normalized, email, channel, branch, service, car, budget, source,
               notes, follow_up, status, operator_id, language, customer_type, country, city,
-              additional_comment, form_mode, sale_operator_id, sale_operator_name, sale_group_id, sale_group_name)
+              additional_comment, form_mode)
            OUTPUT INSERTED.id
            VALUES
              (@name, @phone, @phoneNorm, @email, @channel, @branch, @service, @car, @budget, @source,
               @notes, @followUp, 'new', @operatorId, @language, @customerType, @country, @city,
-              @additional, @formMode, @saleOpId, @saleOpName, @saleGroupId, @saleGroupName)`
+              @additional, @formMode)`
         );
       const leadId = insert.recordset[0].id;
 
+      // Record the sale-operator assignment (history + denormalised owner on the lead).
+      if (assignOp) {
+        await setAssignment(pool, sql, { leadId, op: assignOp, method: assignMethod, reason: assignReason, assignedBy: user.uid });
+      }
+
       const histText = ('Lead created · ' + (source || 'manual')
-        + (saleOp ? ' · → ' + saleOp.name + ' (' + saleOp.group_name + ')' : '')).slice(0, 400);
+        + (assignOp ? ' · → ' + assignOp.name + ' (' + assignOp.groupName + ')' : '')).slice(0, 400);
       await pool.request()
         .input('leadId', sql.Int, leadId)
         .input('text', sql.NVarChar(400), histText)
@@ -182,7 +185,7 @@ module.exports = async (req, res) => {
 
       return send(res, 201, {
         id: leadId, operatorId, operatorName: opRow ? opRow.name : null,
-        saleOperator: saleOp ? { id: saleOp.id, name: saleOp.name, group: saleOp.group_name } : null,
+        saleOperator: assignOp ? { id: assignOp.id, name: assignOp.name, group: assignOp.groupName, reason: assignReason } : null,
         parsed: shortMode ? { name, phone: phoneRaw, source, customerType, country, city, additionalComment } : null,
       });
     } catch (err) {

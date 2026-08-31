@@ -74,7 +74,7 @@ BEGIN
   CREATE INDEX IX_history_lead ON dbo.lead_history(lead_id, created_at DESC);
 END;
 
--- ---------- App settings (round-robin counter etc.) ----------
+-- ---------- App settings (round-robin counters etc.) ----------
 IF OBJECT_ID('dbo.app_settings', 'U') IS NULL
 BEGIN
   CREATE TABLE dbo.app_settings (
@@ -82,4 +82,28 @@ BEGIN
     val   INT NOT NULL
   );
   INSERT INTO dbo.app_settings ([key], val) VALUES ('rr_counter', 0);
+END;
+
+-- ---------- Lead assignment history (Stage 2 distribution) ----------
+-- One row per assignment; is_current=1 & ended_at NULL is the active owner.
+-- Each row is a time window: operator held the lead from assigned_at to ended_at.
+IF OBJECT_ID('dbo.lead_assignments', 'U') IS NULL
+BEGIN
+  CREATE TABLE dbo.lead_assignments (
+    id                 INT IDENTITY(1,1) PRIMARY KEY,
+    lead_id            INT           NOT NULL CONSTRAINT FK_assign_lead REFERENCES dbo.leads(id),
+    sale_operator_id   INT           NULL,       -- crm.dbo.users.ID
+    sale_operator_name NVARCHAR(225) NULL,
+    sale_group_id      INT           NULL,       -- crm.dbo.usersgroups.ID
+    sale_group_name    NVARCHAR(200) NULL,
+    method             NVARCHAR(24)  NOT NULL,   -- 'manual'|'auto-rule'|'rotation'|'reassign-inactive'
+    reason             NVARCHAR(400) NULL,
+    assigned_by        INT           NULL CONSTRAINT FK_assign_actor REFERENCES dbo.users(id),
+    assigned_at        DATETIME2     NOT NULL CONSTRAINT DF_assign_at DEFAULT (SYSUTCDATETIME()),
+    ended_at           DATETIME2     NULL,
+    is_current         BIT           NOT NULL CONSTRAINT DF_assign_current DEFAULT (1)
+  );
+  CREATE INDEX IX_assign_lead    ON dbo.lead_assignments(lead_id, assigned_at DESC);
+  CREATE INDEX IX_assign_current ON dbo.lead_assignments(lead_id) WHERE is_current = 1;
+  CREATE INDEX IX_assign_op      ON dbo.lead_assignments(sale_operator_id, is_current);
 END;

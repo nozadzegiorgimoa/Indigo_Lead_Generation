@@ -2,6 +2,8 @@
 // PATCH /api/leads/:id           -> { status } and/or { operatorId }
 const { sql, getPool } = require('../_db');
 const { requireUser, send, readJson } = require('../_auth');
+const { getOperator } = require('../_distribute');
+const { setAssignment } = require('../_assign');
 
 const STATUS_IDS = ['new', 'contacted', 'quoted', 'won', 'lost'];
 const STATUS_LABEL = { new: 'New', contacted: 'Contacted', quoted: 'Quoted', won: 'Won', lost: 'Lost' };
@@ -32,7 +34,8 @@ module.exports = async (req, res) => {
     const hist = await pool.request().input('id', sql.Int, id).query(
       'SELECT text, created_at FROM dbo.lead_history WHERE lead_id = @id ORDER BY created_at DESC, id DESC'
     );
-    return send(res, 200, { lead: shape(lead), history: hist.recordset });
+    const assignments = await fetchAssignments(pool, id);
+    return send(res, 200, { lead: shape(lead), history: hist.recordset, assignments });
   }
 
   // ---------------- UPDATE ----------------
@@ -47,7 +50,7 @@ module.exports = async (req, res) => {
         events.push('Status → ' + (STATUS_LABEL[b.status] || b.status));
       }
 
-      // Only managers may reassign.
+      // Only managers may reassign the portal operator (visibility scoping).
       if (b.operatorId != null && user.role === 'manager' && Number(b.operatorId) !== lead.operator_id) {
         const target = (await pool.request().input('oid', sql.Int, Number(b.operatorId))
           .query("SELECT name FROM dbo.users WHERE id = @oid AND role='operator' AND active=1")).recordset[0];
@@ -55,6 +58,18 @@ module.exports = async (req, res) => {
         await pool.request().input('id', sql.Int, id).input('oid', sql.Int, Number(b.operatorId))
           .query('UPDATE dbo.leads SET operator_id = @oid WHERE id = @id');
         events.push('Reassigned to ' + target.name);
+      }
+
+      // Managers may rotate the SALE operator (crm) — full history is kept.
+      if (b.saleOperatorId != null && user.role === 'manager' && Number(b.saleOperatorId) !== lead.sale_operator_id) {
+        const picked = await getOperator(pool, sql, b.saleOperatorId);
+        if (!picked) return send(res, 400, { error: 'That sale operator is not a valid active operator.' });
+        await setAssignment(pool, sql, {
+          leadId: id,
+          op: { id: picked.id, name: picked.name, groupId: picked.group_id, groupName: picked.group_name },
+          method: 'rotation', reason: 'manual reassign', assignedBy: user.uid,
+        });
+        events.push('Sale operator → ' + picked.name + ' (' + picked.group_name + ')');
       }
 
       for (const text of events) {
@@ -71,7 +86,8 @@ module.exports = async (req, res) => {
       const hist = await pool.request().input('id', sql.Int, id).query(
         'SELECT text, created_at FROM dbo.lead_history WHERE lead_id = @id ORDER BY created_at DESC, id DESC'
       );
-      return send(res, 200, { lead: shape(fresh.recordset[0]), history: hist.recordset });
+      const assignments = await fetchAssignments(pool, id);
+      return send(res, 200, { lead: shape(fresh.recordset[0]), history: hist.recordset, assignments });
     } catch (err) {
       return send(res, 500, { error: 'Could not update lead: ' + err.message });
     }
@@ -86,6 +102,24 @@ function shape(l) {
     branch: l.branch, service: l.service, car: l.car, budget: l.budget,
     source: l.source, notes: l.notes, followUp: l.follow_up, status: l.status,
     operatorId: l.operator_id, operator: l.operator_name, operatorBranch: l.operator_branch,
+    language: l.language, customerType: l.customer_type, country: l.country, city: l.city,
+    additionalComment: l.additional_comment,
+    saleOperatorId: l.sale_operator_id, saleOperator: l.sale_operator_name,
+    saleGroupId: l.sale_group_id, saleGroup: l.sale_group_name,
     createdAt: l.created_at,
   };
+}
+
+// Full assignment timeline for a lead: which operator held it, and when.
+async function fetchAssignments(pool, id) {
+  const r = await pool.request().input('id', sql.Int, id).query(
+    `SELECT la.sale_operator_id, la.sale_operator_name, la.sale_group_name,
+            la.method, la.reason, la.assigned_at, la.ended_at, la.is_current,
+            u.name AS assigned_by_name
+       FROM dbo.lead_assignments la
+       LEFT JOIN dbo.users u ON u.id = la.assigned_by
+      WHERE la.lead_id = @id
+      ORDER BY la.assigned_at DESC, la.id DESC`
+  );
+  return r.recordset;
 }
