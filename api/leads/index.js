@@ -96,13 +96,22 @@ module.exports = async (req, res) => {
       }
 
       // ----- Field resolution + defaults -----
+      // In SHORT mode the only typed inputs are the sale operator, the speaking
+      // language and the comment; source/customer-type/country/city all come from
+      // parsing, so parsed values win and the form's hidden defaults never override
+      // them. In FULL mode the explicit fields win, with parsing as a fallback.
       const service = SERVICE_IDS.includes(b.service) ? b.service : 'import';
       const language = LANGUAGES.includes(b.language) ? b.language : null;
-      const customerType = CUSTOMER_TYPES.includes(b.customerType) ? b.customerType
-                         : (CUSTOMER_TYPES.includes(parsed.customerType) ? parsed.customerType : 'retail');
-      const source = normalizeSource(b.source) || parsed.source || null;
-      let country = (b.country || parsed.country || phoneInfo.countryName || '').trim() || null;
-      let city = (b.city || parsed.city || '').trim() || null;
+      const customerType = shortMode
+        ? (CUSTOMER_TYPES.includes(parsed.customerType) ? parsed.customerType : 'retail')
+        : (CUSTOMER_TYPES.includes(b.customerType) ? b.customerType : (parsed.customerType || 'retail'));
+      const source = shortMode
+        ? (parsed.source || null)
+        : (normalizeSource(b.source) || parsed.source || null);
+      let country = (shortMode ? (parsed.country || phoneInfo.countryName)
+                               : (b.country || parsed.country || phoneInfo.countryName)) || '';
+      country = country.toString().trim() || null;
+      let city = (shortMode ? (parsed.city || '') : (b.city || parsed.city || '')).toString().trim() || null;
       if (!city && phoneInfo.country === 'GE') city = 'Tbilisi';   // GE default
       const additionalComment = shortMode ? (parsed.additionalComment || null)
                                           : ((b.additionalComment || '').trim() || null);

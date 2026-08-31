@@ -7,7 +7,7 @@ const { detectSource, stripSourceMentions } = require('./_sources');
 
 // Tokens that should never be part of a name (sources, channels, connectors,
 // customer-type words) — used to stop name capture and to clean the leftover.
-const STOP_WORD = /(facebook|fb|insta(gram)?|ig|whats\s*app|whatsapp|votsap|viber|tik\s*tok|tiktok|meta|lead|form|retail|dealer|call|number|tel|mob|ფეისბუ|ინსტა|ვოთსაფ|ვაცაპ|ვაიბერ|ტიქტოქ|სადილერო|საცალო|რითეილ|დილერ|ზარი|დარეკ|საიტ|ნომერი|ნომ|მობ|ტელ)/iu;
+const STOP_WORD = /(facebook|fb|insta(gram)?|ig|whats\s*app|whatsapp|votsap|viber|tik\s*tok|tiktok|meta|lead|form|retail|dealer|call|number|tel|mob|ფეისბუ|ფბ|ინსტა|ვოთსაფ|ვაცაპ|ვაიბერ|ტი[კქ]ტო[კქ]|სადილერო|საცალო|რითეილ|დილერ|ზარი|დარეკ|საიტ|ნომერი|ნომ|მობ|ტელ)/iu;
 
 // Known Georgian cities (extend as needed). Used only for explicit mentions.
 const CITY_HINTS = [

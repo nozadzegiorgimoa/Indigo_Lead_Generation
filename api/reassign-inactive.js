@@ -16,13 +16,14 @@ module.exports = async (req, res) => {
 
   try {
     const pool = await getPool();
-    // Leads assigned to someone who is NOT currently an active sale operator.
+    // Leads with no active owner: either unassigned, or assigned to someone who
+    // is no longer an active sale operator (left / blocked / deleted).
     const stale = (await pool.request().query(
       `SELECT l.id, l.language, l.customer_type AS customerType, l.country, l.city,
               l.sale_operator_id, l.sale_operator_name
          FROM dbo.leads l
-        WHERE l.sale_operator_id IS NOT NULL
-          AND NOT EXISTS (
+        WHERE l.sale_operator_id IS NULL
+           OR NOT EXISTS (
             SELECT 1 FROM crm.dbo.users u JOIN crm.dbo.usersgroups g ON g.ID = u.GroupID
              WHERE u.ID = l.sale_operator_id AND g.Add3 = 1 AND ${OP_FILTER})`
     )).recordset;
