@@ -73,3 +73,23 @@ BEGIN
   CREATE INDEX IX_ldh_lid ON dbo.lead_distribution_history(crm_lid, id);
 END;
 GO
+
+-- Poll capture of owner changes for portal leads (runs every 3 min via SQL Agent
+-- job "sync lead history"). Used because the shared distribute_hot_leads proc
+-- cannot be edited here; create_hot_lead logs its own assignments directly.
+CREATE OR ALTER PROCEDURE dbo.sync_lead_history AS
+BEGIN
+  SET NOCOUNT ON;
+  INSERT INTO dbo.lead_distribution_history
+    (crm_lid, crm_cid, from_operator_id, to_operator_id, to_operator_name, to_group_name, method)
+  SELECT l.crm_lid, cl.CID, h.last_to, cl.AID,
+         CASE WHEN cl.AID = 1574 THEN N'გასანაწილებელი ლიდები (pool)' ELSE so.name END,
+         CASE WHEN cl.AID = 1574 THEN N'—' ELSE so.group_name END,
+         CASE WHEN h.last_to IS NULL THEN N'backfill' WHEN h.last_to = 1574 THEN N'distribute' ELSE N'reassigned' END
+  FROM dbo.leads l
+  JOIN crm.dbo.loans cl ON cl.ID = l.crm_lid
+  OUTER APPLY (SELECT TOP 1 to_operator_id AS last_to FROM dbo.lead_distribution_history h2 WHERE h2.crm_lid = l.crm_lid ORDER BY h2.id DESC) h
+  LEFT JOIN dbo.sale_operators so ON so.crm_user_id = cl.AID
+  WHERE l.crm_lid IS NOT NULL AND cl.AID IS NOT NULL AND (h.last_to IS NULL OR h.last_to <> cl.AID);
+END;
+GO
