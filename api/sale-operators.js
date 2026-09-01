@@ -1,7 +1,7 @@
 // GET /api/sale-operators
 // Grouped sale-operator roster from the portal's own mirror (dbo.sale_operators),
-// refreshed from crm by sync_sale_operators. Excludes the Apex group (57), which
-// does not work hot leads.
+// refreshed from crm by sync_sale_operators. Shows ALL active sale operators
+// (every group) so any can be picked for a manual/force assignment.
 const { getPool } = require('./_db');
 const { requireUser, send } = require('./_auth');
 
@@ -15,7 +15,7 @@ module.exports = async (req, res) => {
     const result = await pool.request().query(
       `SELECT group_id, group_name, crm_user_id, name, in_rotation
          FROM dbo.sale_operators
-        WHERE active = 1 AND ISNULL(group_id, 0) <> 57
+        WHERE active = 1
         ORDER BY group_name, name`
     );
     const byGroup = new Map();
