@@ -34,9 +34,9 @@ module.exports = async (req, res) => {
     const hist = await pool.request().input('id', sql.Int, id).query(
       'SELECT text, created_at FROM dbo.lead_history WHERE lead_id = @id ORDER BY created_at DESC, id DESC'
     );
-    const assignments = await fetchAssignments(pool, id);
     const crm = await fetchCrmOwner(pool, lead.crm_lid);
-    return send(res, 200, { lead: shape(lead), history: hist.recordset, assignments, crm });
+    const distHistory = await fetchDistHistory(pool, lead.crm_lid);
+    return send(res, 200, { lead: shape(lead), history: hist.recordset, crm, distHistory });
   }
 
   // ---------------- UPDATE ----------------
@@ -109,6 +109,17 @@ function shape(l) {
     saleGroupId: l.sale_group_id, saleGroup: l.sale_group_name,
     createdAt: l.created_at,
   };
+}
+
+// Local log of procedure-made assignments (create_hot_lead + distribute_hot_leads).
+async function fetchDistHistory(pool, crmLid) {
+  if (!crmLid) return [];
+  const r = await pool.request().input('lid', sql.Numeric(18, 0), crmLid).query(
+    `SELECT to_operator_id, to_operator_name, to_group_name, from_operator_id, method, changed_at
+       FROM dbo.lead_distribution_history
+      WHERE crm_lid = @lid ORDER BY id`
+  );
+  return r.recordset;
 }
 
 // Reflect the lead's current owner from the CRM (the real distribution).

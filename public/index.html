@@ -795,6 +795,16 @@ async function viewDetail(id) {
       '<div class="assignee-branch">'+esc((crm && crm.group) || "—")+'</div></div></div>' +
     '<div class="assign-label" style="margin-top:10px">'+esc(crmStatus)+'</div></section>';
 
+  // Assignment timeline (procedure-made assignments, local log).
+  const dh = d.distHistory || [];
+  const dhCard = '<section class="card"><div class="side-title">'+esc(tr.assignmentHistory)+'</div><div class="history">' +
+    (dh.length ? dh.map(a => '<div class="history-item"><div class="history-dot"></div><div>' +
+      '<div class="history-text">'+esc(a.to_operator_name||"—")+
+        (a.to_group_name && a.to_group_name!=="—" ? ' <span style="font-weight:500;color:var(--muted)">· '+esc(a.to_group_name)+'</span>' : '')+'</div>' +
+      '<div class="history-at">'+fmtDateTime(a.changed_at)+' · '+esc(a.method)+'</div></div></div>').join("")
+      : '<div class="history-at">—</div>') +
+    '</div></section>';
+
   const html = '<div class="detail-grid">' +
     '<section class="detail-card"><div class="detail-head"><div>' +
       '<button type="button" class="back-btn" id="back">← '+esc(tr.back)+'</button>' +
@@ -812,7 +822,7 @@ async function viewDetail(id) {
           const style = active ? ' style="background:'+s.bg+';color:'+s.fg+';border-color:'+s.bg+'"' : '';
           return '<button type="button" class="status-btn" data-status="'+s.id+'"'+style+'>'+esc(s[state.lang]||s.en)+'</button>';
         }).join("") + '</div></section>' +
-      crmCard +
+      crmCard + dhCard +
       '<section class="card"><div class="side-title">'+esc(tr.history)+'</div><div class="history">' +
         d.history.map(h => '<div class="history-item"><div class="history-dot"></div><div>' +
           '<div class="history-text">'+esc(h.text)+'</div><div class="history-at">'+fmtDateTime(h.created_at)+'</div></div></div>').join("") +

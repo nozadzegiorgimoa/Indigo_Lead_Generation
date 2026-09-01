@@ -58,3 +58,18 @@ BEGIN
   WHEN NOT MATCHED BY SOURCE THEN UPDATE SET t.active=0, t.synced_at=SYSUTCDATETIME();
 END;
 GO
+
+-- Local log of procedure-made assignments (create_hot_lead + distribute_hot_leads).
+IF OBJECT_ID('dbo.lead_distribution_history','U') IS NULL
+BEGIN
+  CREATE TABLE dbo.lead_distribution_history (
+    id INT IDENTITY(1,1) PRIMARY KEY,
+    crm_lid NUMERIC(18,0) NOT NULL, crm_cid NUMERIC(18,0) NULL,
+    from_operator_id INT NULL, to_operator_id INT NULL,
+    to_operator_name NVARCHAR(225) NULL, to_group_name NVARCHAR(200) NULL,
+    method NVARCHAR(40) NOT NULL,
+    changed_at DATETIME2 NOT NULL CONSTRAINT DF_ldh_at DEFAULT (SYSUTCDATETIME())
+  );
+  CREATE INDEX IX_ldh_lid ON dbo.lead_distribution_history(crm_lid, id);
+END;
+GO

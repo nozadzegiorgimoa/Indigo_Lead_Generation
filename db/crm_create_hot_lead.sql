@@ -1,12 +1,9 @@
 -- crm.dbo.create_hot_lead — portal entry point for web leads.
--- Creates a CRM hot lead (Stage=7, State=174) and picks the owner in priority order:
---   1) @force_operator_id (manual pick on the portal) — always wins.
---   2) Web routing rules (user's Stage-2 rules, WEB LEADS ONLY):
---        Ukrainian/Ukraine          -> Markov's group (56), least-loaded Russian op
---        Russian + Dealer           -> Markov's group (56), least-loaded Russian op
---        Russian + Retail           -> Boris Jalalyan (1693)
---   3) Otherwise -> AID=1574 pool; CRM_Helper.dbo.distribute_hot_leads assigns by min-count.
--- Delta-native leads are unaffected (they never call this proc).
+-- Owner priority: manual @force_operator_id > web routing rules > pool.
+-- Web rules: Ukrainian/Ukraine & Russian+Dealer -> least-loaded Russian op in
+--   Markov's group (56); Russian+Retail -> Boris (1693). Min-count preserved.
+-- Logs every assignment it makes into Indigo_Lead_Generation.dbo.lead_distribution_history.
+-- Delta-native leads and manual Delta reassignments are unaffected here.
 CREATE OR ALTER PROCEDURE dbo.create_hot_lead
   @phone             nvarchar(40),
   @name              nvarchar(200),
@@ -25,10 +22,8 @@ BEGIN
 
   DECLARE @lang nvarchar(20) = LOWER(@language);
   DECLARE @f14 nvarchar(60) = CASE @lang
-      WHEN 'georgian'  THEN N'ქართული'
-      WHEN 'russian'   THEN N'რუსული'
-      WHEN 'ukrainian' THEN N'რუსული'
-      WHEN 'english'   THEN N'ინგლისური'
+      WHEN 'georgian'  THEN N'ქართული'  WHEN 'russian'   THEN N'რუსული'
+      WHEN 'ukrainian' THEN N'რუსული'    WHEN 'english'   THEN N'ინგლისური'
       ELSE N'ქართული' END;
   DECLARE @reg nvarchar(120) = ISNULL(NULLIF(LTRIM(RTRIM(@region)),''), N'თბილისი');
   SET @reg = CASE LOWER(@reg)
@@ -40,18 +35,13 @@ BEGIN
   DECLARE @digits nvarchar(40) =
       REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(@phone,''),' ',''),'+',''),'-',''),'(','');
 
-  ---------------------------------------------------------------------------
-  -- Owner resolution: manual pick -> web routing rules -> pool.
-  ---------------------------------------------------------------------------
+  -- Owner resolution: manual pick -> web rules -> pool.
   DECLARE @final_aid int = 1574, @rule nvarchar(60) = NULL;
-
   IF @force_operator_id IS NOT NULL
      AND EXISTS (SELECT 1 FROM crm.dbo.users u JOIN crm.dbo.usersgroups g ON g.ID = u.GroupID
                   WHERE u.ID = @force_operator_id AND g.Add3 = 1 AND u.Deleted IS NULL
                     AND u.IsBlocked = 0 AND u.IsDenyAccess = 0)
-  BEGIN
-    SET @final_aid = @force_operator_id; SET @rule = 'manual';
-  END
+  BEGIN SET @final_aid = @force_operator_id; SET @rule = 'manual'; END
 
   IF @final_aid = 1574
   BEGIN
@@ -59,7 +49,6 @@ BEGIN
                                        OR LOWER(@reg) LIKE '%ukrain%' THEN 1 ELSE 0 END;
     IF @isUkraine = 1 OR (@lang = 'russian' AND @ct = 'Dealer')
     BEGIN
-      -- least-loaded Russian operator in Markov's group (56)
       SELECT TOP 1 @final_aid = a.UserID
         FROM CRM_Helper.dbo.Users_for_leaddistribute a
         JOIN crm.dbo.users u ON u.ID = a.UserID
@@ -74,12 +63,11 @@ BEGIN
     END
   END
 
-  ---------------------------------------------------------------------------
   DECLARE @cid numeric(18,0) = (
       SELECT TOP 1 CID FROM crm.dbo.phones
       WHERE REPLACE(REPLACE(REPLACE(REPLACE(PhoneNumber,' ',''),'+',''),'-',''),'(','') = @digits
       ORDER BY ID DESC);
-  DECLARE @lid numeric(18,0) = NULL;
+  DECLARE @lid numeric(18,0) = NULL, @old_aid int = NULL;
 
   IF @cid IS NULL
   BEGIN
@@ -95,6 +83,7 @@ BEGIN
       SET @lid = (SELECT TOP 1 ID FROM crm.dbo.loans WHERE CID = @cid AND Stage = 7 ORDER BY Created DESC);
       IF @lid IS NOT NULL
       BEGIN
+          SET @old_aid = (SELECT AID FROM crm.dbo.loans WHERE ID = @lid);
           UPDATE crm.dbo.loans SET State = 174, AID = @final_aid, Updated = SYSUTCDATETIME() WHERE ID = @lid;
           SET @out_action = 'reheated';
       END
@@ -112,7 +101,7 @@ BEGIN
       SET @lid = SCOPE_IDENTITY();
   END
 
-  -- Keep min-count fair for any direct assignment (manual or rule).
+  -- Keep min-count fair for a direct assignment (manual or rule).
   IF @final_aid <> 1574
     UPDATE CRM_Helper.dbo.Users_for_leaddistribute
        SET CountGeorgian = CountGeorgian + CASE WHEN @f14 = N'ქართული'   THEN 1 ELSE 0 END,
@@ -120,7 +109,17 @@ BEGIN
            CountEnglish  = CountEnglish  + CASE WHEN @f14 = N'ინგლისური' THEN 1 ELSE 0 END
      WHERE UserID = @final_aid;
 
-  IF @out_action IS NOT NULL AND @rule IS NOT NULL SET @out_action = @out_action + ' · ' + @rule;
+  -- Log the assignment (proc-made) into the portal's local history.
+  DECLARE @toName nvarchar(225) = CASE WHEN @final_aid = 1574 THEN N'გასანაწილებელი ლიდები (pool)'
+                                       ELSE (SELECT Name FROM crm.dbo.users WHERE ID = @final_aid) END;
+  DECLARE @toGrp  nvarchar(200) = CASE WHEN @final_aid = 1574 THEN N'—'
+       ELSE (SELECT g.Caption FROM crm.dbo.users u JOIN crm.dbo.usersgroups g ON g.ID = u.GroupID WHERE u.ID = @final_aid) END;
+  INSERT Indigo_Lead_Generation.dbo.lead_distribution_history
+    (crm_lid, crm_cid, from_operator_id, to_operator_id, to_operator_name, to_group_name, method)
+  VALUES (@lid, @cid, @old_aid, @final_aid, @toName, @toGrp,
+          N'portal:' + ISNULL(@rule, CASE WHEN @final_aid = 1574 THEN 'pool' ELSE 'assigned' END));
+
   SET @out_cid = @cid;
   SET @out_lid = @lid;
+  IF @out_action IS NOT NULL AND @rule IS NOT NULL SET @out_action = @out_action + ' · ' + @rule;
 END
