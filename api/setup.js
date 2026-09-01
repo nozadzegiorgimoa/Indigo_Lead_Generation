@@ -96,6 +96,22 @@ BEGIN
   CREATE INDEX IX_assign_lead ON dbo.lead_assignments(lead_id, assigned_at DESC);
   CREATE INDEX IX_assign_op ON dbo.lead_assignments(sale_operator_id, is_current);
 END;
+-- Stage 3 (CRM-distributes, portal-reflects): link columns + operator mirror.
+-- (The sync proc dbo.sync_sale_operators and crm.dbo.create_hot_lead are deployed
+--  separately via db/migrate_stage3.sql and db/crm_create_hot_lead.sql.)
+IF COL_LENGTH('dbo.leads','crm_cid')    IS NULL ALTER TABLE dbo.leads ADD crm_cid    NUMERIC(18,0) NULL;
+IF COL_LENGTH('dbo.leads','crm_lid')    IS NULL ALTER TABLE dbo.leads ADD crm_lid    NUMERIC(18,0) NULL;
+IF COL_LENGTH('dbo.leads','crm_action') IS NULL ALTER TABLE dbo.leads ADD crm_action NVARCHAR(40)  NULL;
+IF OBJECT_ID('dbo.sale_operators','U') IS NULL
+BEGIN
+  CREATE TABLE dbo.sale_operators (
+    crm_user_id INT PRIMARY KEY, name NVARCHAR(225) NOT NULL, group_id INT NULL,
+    group_name NVARCHAR(200) NULL, region NVARCHAR(60) NULL, allowed_retail BIT NULL,
+    allowed_dealer BIT NULL, in_rotation BIT NOT NULL CONSTRAINT DF_saleop_rot DEFAULT (0),
+    active BIT NOT NULL CONSTRAINT DF_saleop_active DEFAULT (1),
+    synced_at DATETIME2 NOT NULL CONSTRAINT DF_saleop_synced DEFAULT (SYSUTCDATETIME())
+  );
+END;
 `;
 
 // Default team from the design. Passwords are generated at runtime.

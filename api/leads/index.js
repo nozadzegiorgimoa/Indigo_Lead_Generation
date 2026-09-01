@@ -164,6 +164,7 @@ module.exports = async (req, res) => {
           .input('clienttype', sql.NVarChar(20), customerType === 'dealer' ? 'Dealer' : 'Retail')
           .input('source', sql.NVarChar(60), source || null)
           .input('comment', sql.NVarChar(sql.MAX), additionalComment || null)
+          .input('force_operator_id', sql.Int, b.saleOperatorId ? Number(b.saleOperatorId) : null)
           .output('out_cid', sql.Numeric(18, 0))
           .output('out_lid', sql.Numeric(18, 0))
           .output('out_action', sql.NVarChar(40))
