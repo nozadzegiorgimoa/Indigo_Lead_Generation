@@ -14,7 +14,7 @@ const SOURCE_RULES = [
   { canonical: 'Meta Lead Form', re: /(?<![\p{L}])(meta\s*lead\s*form|lead\s*form|meta)(?![\p{L}])|(?<![\p{L}])(ლიდ\s*ფორმა|ლიდფორმა)/iu },
   { canonical: 'Facebook',       re: /(?<![\p{L}])(facebook|fb)(?![\p{L}])|(?<![\p{L}])(ფეისბუ|ფბ)/iu },
   { canonical: 'Instagram',      re: /(?<![\p{L}])(instagram|insta|ig)(?![\p{L}])|(?<![\p{L}])ინსტა/iu },
-  { canonical: 'WhatsApp',       re: /(?<![\p{L}])(whats\s*app|whatsapp|votsap|watsap)(?![\p{L}])|(?<![\p{L}])(ვოთსაფ|ვაცაპ)/iu },
+  { canonical: 'WhatsApp',       re: /(?<![\p{L}])(whats\s*app|whatsapp|votsap|watsap)(?![\p{L}])|(?<![\p{L}])(ვოთსაფ|ვოცაფ|ვაცაპ|ვაცაფ)/iu },
   { canonical: 'Viber',          re: /(?<![\p{L}])(viber)(?![\p{L}])|(?<![\p{L}])ვაიბერ/iu },
   { canonical: 'TikTok',         re: /(?<![\p{L}])(tik\s*tok|tiktok)(?![\p{L}])|(?<![\p{L}])ტი[კქ]ტო[კქ]/iu },
   { canonical: 'Phone call',     re: /(?<![\p{L}])(phone\s*call|call)(?![\p{L}])|(?<![\p{L}])(ზარი|დარეკ)/iu },
@@ -49,7 +49,7 @@ function stripSourceMentions(text) {
   let out = text;
   for (const rule of SOURCE_RULES) {
     // Extend any Georgian prefix in the rule to swallow trailing letters.
-    const src = rule.re.source.replace(/(ფეისბუ|ფბ|ინსტა|ვოთსაფ|ვაცაპ|ვაიბერ|ტი\[კქ\]ტო\[კქ\]|ზარი|დარეკ|ადგილზე|რეკომენდაცი|მეგობ|საიტ|ლიდ\\s\*ფორმა|ლიდფორმა|ფორმა)/g, '$1\\p{L}*');
+    const src = rule.re.source.replace(/(ფეისბუ|ფბ|ინსტა|ვოთსაფ|ვოცაფ|ვაცაპ|ვაცაფ|ვაიბერ|ტი\[კქ\]ტო\[კქ\]|ზარი|დარეკ|ადგილზე|რეკომენდაცი|მეგობ|საიტ|ლიდ\\s\*ფორმა|ლიდფორმა|ფორმა)/g, '$1\\p{L}*');
     out = out.replace(new RegExp(src, 'giu'), ' ');
   }
   return out;

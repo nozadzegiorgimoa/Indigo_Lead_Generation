@@ -782,38 +782,18 @@ async function viewDetail(id) {
     { label:tr.budget, value:lead.budget||"—" }, { label:tr.followUp, value:lead.followUp?fmtDate(lead.followUp):"—" }
   ];
 
-  const reassignHtml = isManager ?
-    '<select class="reassign-select" id="reassign">' +
-      state.operators.map(o => '<option value="'+o.id+'"'+(lead.operatorId===o.id?" selected":"")+'>'+esc(o.name)+'</option>').join("") +
-    '</select>' : '';
-
-  // Sale-operator (crm) card — current owner + grouped reassign for managers.
-  const sgId = lead.saleGroupId, curSg = state.saleGroups.find(g => String(g.id) === String(sgId));
-  const saleReassign = isManager ?
-    '<select class="reassign-select" id="sale-group" style="margin-top:10px">' +
-      '<option value="">'+esc(tr.selectGroup)+'</option>' +
-      state.saleGroups.map(g => '<option value="'+g.id+'"'+(String(sgId)===String(g.id)?" selected":"")+'>'+esc(g.name)+'</option>').join("") +
-    '</select>' +
-    '<select class="reassign-select" id="sale-operator" style="margin-top:8px">' +
-      '<option value="">'+esc(curSg?tr.selectOperator:tr.noOperator)+'</option>' +
-      ((curSg?curSg.operators:[]).map(o => '<option value="'+o.id+'"'+(String(lead.saleOperatorId)===String(o.id)?" selected":"")+'>'+esc(o.name)+'</option>').join("")) +
-    '</select>' +
-    '<button type="button" class="btn-secondary" id="sale-apply" style="margin-top:8px">'+esc(tr.applyReassign)+'</button>' : '';
-  const saleCard = '<section class="card"><div class="side-title">'+esc(tr.saleManager)+'</div>' +
-    '<div class="assignee"><div class="assignee-avatar">'+esc(initials(lead.saleOperator||"?"))+'</div>' +
-      '<div><div class="assignee-name">'+esc(lead.saleOperator||tr.unassigned)+'</div>' +
-      '<div class="assignee-branch">'+esc(lead.saleGroup||"—")+'</div></div></div>' + saleReassign + '</section>';
-
-  // Assignment history timeline (who held it, and for what period).
-  const assigns = d.assignments || [];
-  const histCard = '<section class="card"><div class="side-title">'+esc(tr.assignmentHistory)+'</div><div class="history">' +
-    (assigns.length ? assigns.map(a => '<div class="history-item"><div class="history-dot"></div><div>' +
-      '<div class="history-text">'+esc(a.sale_operator_name || a.sale_group_name || "—")+
-        (a.sale_group_name && a.sale_operator_name ? ' <span style="font-weight:500;color:var(--muted)">· '+esc(a.sale_group_name)+'</span>' : '')+'</div>' +
-      '<div class="history-at">'+fmtDateTime(a.assigned_at)+' → '+(a.ended_at?fmtDateTime(a.ended_at):esc(tr.present))+
-        ' · '+esc(a.method)+(a.assigned_by_name?' · '+esc(a.assigned_by_name):'')+'</div></div></div>').join("")
-      : '<div class="history-at">—</div>') +
-    '</div></section>';
+  // Current owner, reflected from the CRM (the real distribution). Reassignment
+  // happens in Delta, not here.
+  const crm = d.crm;
+  const crmStatus = crm
+    ? (crm.pooled ? (state.lang === "ka" ? "⏳ ნაწილდება…" : "⏳ awaiting distribution")
+                  : (crm.stateCaption || ""))
+    : (state.lang === "ka" ? "CRM-ში ვერ გადაიგზავნა" : "not pushed to CRM");
+  const crmCard = '<section class="card"><div class="side-title">'+esc(tr.saleManager)+'</div>' +
+    '<div class="assignee"><div class="assignee-avatar">'+esc(initials((crm && crm.operator) || "?"))+'</div>' +
+      '<div><div class="assignee-name">'+esc((crm && crm.operator) || tr.unassigned)+'</div>' +
+      '<div class="assignee-branch">'+esc((crm && crm.group) || "—")+'</div></div></div>' +
+    '<div class="assign-label" style="margin-top:10px">'+esc(crmStatus)+'</div></section>';
 
   const html = '<div class="detail-grid">' +
     '<section class="detail-card"><div class="detail-head"><div>' +
@@ -832,13 +812,7 @@ async function viewDetail(id) {
           const style = active ? ' style="background:'+s.bg+';color:'+s.fg+';border-color:'+s.bg+'"' : '';
           return '<button type="button" class="status-btn" data-status="'+s.id+'"'+style+'>'+esc(s[state.lang]||s.en)+'</button>';
         }).join("") + '</div></section>' +
-      saleCard +
-      '<section class="card"><div class="side-title">'+esc(tr.assignedTo)+'</div>' +
-        '<div class="assignee"><div class="assignee-avatar">'+esc(initials(lead.operator||"?"))+'</div>' +
-          '<div><div class="assignee-name">'+esc(lead.operator||tr.unassigned)+'</div>' +
-          '<div class="assignee-branch">'+esc(lead.operatorBranch||"—")+'</div></div></div>' + reassignHtml +
-      '</section>' +
-      histCard +
+      crmCard +
       '<section class="card"><div class="side-title">'+esc(tr.history)+'</div><div class="history">' +
         d.history.map(h => '<div class="history-item"><div class="history-dot"></div><div>' +
           '<div class="history-text">'+esc(h.text)+'</div><div class="history-at">'+fmtDateTime(h.created_at)+'</div></div></div>').join("") +
@@ -853,25 +827,6 @@ async function viewDetail(id) {
     try { await api("/api/leads/"+id, { method:"PATCH", body:{ status:b.dataset.status } }); route(); }
     catch (err) { alert(err.message); }
   });
-  const rs = el("reassign");
-  if (rs) rs.onchange = async e => {
-    try { await api("/api/leads/"+id, { method:"PATCH", body:{ operatorId:Number(e.target.value) } }); state.operators = []; route(); }
-    catch (err) { alert(err.message); }
-  };
-  // Sale-operator reassignment: group select repopulates operators; Apply PATCHes.
-  const sg = el("sale-group"), so = el("sale-operator"), applyBtn = el("sale-apply");
-  if (sg && so) sg.onchange = () => {
-    const grp = state.saleGroups.find(g => String(g.id) === String(sg.value));
-    so.innerHTML = '<option value="">'+esc(grp?tr.selectOperator:tr.noOperator)+'</option>' +
-      ((grp?grp.operators:[]).map(o => '<option value="'+o.id+'">'+esc(o.name)+'</option>').join(""));
-  };
-  if (applyBtn) applyBtn.onclick = async () => {
-    const val = so && so.value ? Number(so.value) : null;
-    if (!val) { alert(tr.selectOperator); return; }
-    applyBtn.disabled = true;
-    try { await api("/api/leads/"+id, { method:"PATCH", body:{ saleOperatorId:val } }); route(); }
-    catch (err) { applyBtn.disabled = false; alert(err.message); }
-  };
 }
 
 /* ══════════════ CHANGE PASSWORD ══════════════ */

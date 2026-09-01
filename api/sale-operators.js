@@ -1,8 +1,7 @@
 // GET /api/sale-operators
-// Live roster of assignable sale operators, grouped by sales group, read
-// cross-DB from crm.dbo.users on the same SQL instance. Sales groups are
-// usersgroups.Add3 = 1; active = Deleted IS NULL and not blocked/denied;
-// placeholder accounts (System*, generic login==name) are excluded.
+// Grouped sale-operator roster from the portal's own mirror (dbo.sale_operators),
+// refreshed from crm by sync_sale_operators. Excludes the Apex group (57), which
+// does not work hot leads.
 const { getPool } = require('./_db');
 const { requireUser, send } = require('./_auth');
 
@@ -14,23 +13,15 @@ module.exports = async (req, res) => {
   try {
     const pool = await getPool();
     const result = await pool.request().query(
-      `SELECT g.ID AS group_id, g.Caption AS group_name, u.ID AS user_id, u.Name AS user_name
-         FROM crm.dbo.users u
-         JOIN crm.dbo.usersgroups g ON g.ID = u.GroupID
-        WHERE g.Add3 = 1
-          AND u.Deleted IS NULL
-          AND u.IsBlocked = 0
-          AND u.IsDenyAccess = 0
-          AND u.Name NOT LIKE 'System%'
-          AND u.Login <> u.Name
-        ORDER BY g.Caption, u.Name`
+      `SELECT group_id, group_name, crm_user_id, name, in_rotation
+         FROM dbo.sale_operators
+        WHERE active = 1 AND ISNULL(group_id, 0) <> 57
+        ORDER BY group_name, name`
     );
-
-    // Shape into groups -> operators for the grouped dropdown.
     const byGroup = new Map();
     for (const r of result.recordset) {
       if (!byGroup.has(r.group_id)) byGroup.set(r.group_id, { id: r.group_id, name: r.group_name, operators: [] });
-      byGroup.get(r.group_id).operators.push({ id: r.user_id, name: r.user_name });
+      byGroup.get(r.group_id).operators.push({ id: r.crm_user_id, name: r.name, inRotation: !!r.in_rotation });
     }
     return send(res, 200, { groups: Array.from(byGroup.values()) });
   } catch (err) {

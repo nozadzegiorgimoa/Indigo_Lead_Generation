@@ -35,7 +35,8 @@ module.exports = async (req, res) => {
       'SELECT text, created_at FROM dbo.lead_history WHERE lead_id = @id ORDER BY created_at DESC, id DESC'
     );
     const assignments = await fetchAssignments(pool, id);
-    return send(res, 200, { lead: shape(lead), history: hist.recordset, assignments });
+    const crm = await fetchCrmOwner(pool, lead.crm_lid);
+    return send(res, 200, { lead: shape(lead), history: hist.recordset, assignments, crm });
   }
 
   // ---------------- UPDATE ----------------
@@ -107,6 +108,27 @@ function shape(l) {
     saleOperatorId: l.sale_operator_id, saleOperator: l.sale_operator_name,
     saleGroupId: l.sale_group_id, saleGroup: l.sale_group_name,
     createdAt: l.created_at,
+  };
+}
+
+// Reflect the lead's current owner from the CRM (the real distribution).
+async function fetchCrmOwner(pool, crmLid) {
+  if (!crmLid) return null;
+  const r = await pool.request().input('lid', sql.Numeric(18, 0), crmLid).query(
+    `SELECT cl.AID AS aid, cl.Stage AS stage, cl.State AS state,
+            so.name AS operator, so.group_name AS group_name,
+            CAST(st.Caption AS nvarchar(100)) COLLATE DATABASE_DEFAULT AS state_caption
+       FROM crm.dbo.loans cl
+       LEFT JOIN dbo.sale_operators so ON so.crm_user_id = cl.AID
+       LEFT JOIN crm.dbo.states st ON st.id = cl.State
+      WHERE cl.ID = @lid`
+  );
+  const row = r.recordset[0];
+  if (!row) return null;
+  return {
+    operator: row.operator, group: row.group_name,
+    stage: row.stage, state: row.state, stateCaption: row.state_caption,
+    pooled: Number(row.aid) === 1574,
   };
 }
 

@@ -5,8 +5,6 @@ const { requireUser, send, readJson } = require('../_auth');
 const { parseComment } = require('../_parse');
 const { analyzePhone } = require('../_phone');
 const { normalizeSource } = require('../_sources');
-const { distribute, getOperator } = require('../_distribute');
-const { setAssignment } = require('../_assign');
 
 const STATUS_IDS = ['new', 'contacted', 'quoted', 'won', 'lost'];
 const SERVICE_IDS = ['import', 'leasing', 'dealer', 'spares'];
@@ -33,10 +31,13 @@ module.exports = async (req, res) => {
         reqd.input('q', sql.NVarChar(200), '%' + q + '%');
       }
       const where = clauses.length ? ' WHERE ' + clauses.join(' AND ') : '';
+      // The real owner comes from the CRM (via crm_lid -> loans.AID -> mirrored operator).
       const result = await reqd.query(
         `SELECT l.id, l.name, l.phone, l.service, l.car, l.branch, l.status,
-                u.name AS operator
-         FROM dbo.leads l LEFT JOIN dbo.users u ON u.id = l.operator_id${where}
+                so.name AS operator, so.group_name AS operator_group, l.crm_lid
+         FROM dbo.leads l
+         LEFT JOIN crm.dbo.loans cl ON cl.ID = l.crm_lid
+         LEFT JOIN dbo.sale_operators so ON so.crm_user_id = cl.AID${where}
          ORDER BY l.created_at DESC`
       );
       return send(res, 200, { leads: result.recordset });
@@ -71,29 +72,8 @@ module.exports = async (req, res) => {
         });
       }
       const phoneNorm = phoneInfo.normalized || null;
-
-      // ----- Duplicate detection (normalised phone) -----
-      if (phoneNorm) {
-        const dup = (await pool.request().input('pn', sql.NVarChar(40), phoneNorm).query(
-          `SELECT TOP 1 l.id, l.name, l.source, l.status, l.created_at,
-                  l.sale_operator_name, u.name AS operator,
-                  (SELECT MAX(created_at) FROM dbo.lead_history WHERE lead_id = l.id) AS last_activity
-             FROM dbo.leads l LEFT JOIN dbo.users u ON u.id = l.operator_id
-            WHERE l.phone_normalized = @pn ORDER BY l.created_at DESC`
-        )).recordset[0];
-        if (dup) {
-          // Per spec: do NOT create a second independent lead. (Notifications = Stage 2.)
-          return send(res, 409, {
-            status: 'duplicate',
-            message: 'This phone number is already registered.',
-            existing: {
-              id: dup.id, name: dup.name, source: dup.source, status: dup.status,
-              createdAt: dup.created_at, lastActivity: dup.last_activity,
-              manager: dup.sale_operator_name || dup.operator || null,
-            },
-          });
-        }
-      }
+      // Duplicate handling is delegated to the CRM (create_hot_lead: existing phone
+      // -> reuse the client and add a Stage-7 lead), so no portal-side 409 here.
 
       // ----- Field resolution + defaults -----
       // In SHORT mode the only typed inputs are the sale operator, the speaking
@@ -116,19 +96,10 @@ module.exports = async (req, res) => {
       const additionalComment = shortMode ? (parsed.additionalComment || null)
                                           : ((b.additionalComment || '').trim() || null);
 
-      // ----- Sale-operator assignment: manual pick wins, else auto-distribute (Stage 2) -----
-      let assignOp = null, assignMethod = null, assignReason = null;
-      if (b.saleOperatorId) {
-        const picked = await getOperator(pool, sql, b.saleOperatorId);
-        if (!picked) return send(res, 400, { error: 'The selected sale operator is not a valid active operator.' });
-        assignOp = { id: picked.id, name: picked.name, groupId: picked.group_id, groupName: picked.group_name };
-        assignMethod = 'manual'; assignReason = 'manual pick at entry';
-      } else {
-        const d = await distribute(pool, sql, { language, customerType, country, city });
-        if (d) { assignOp = { id: d.operatorId, name: d.operatorName, groupId: d.groupId, groupName: d.groupName }; assignMethod = 'auto-rule'; assignReason = d.reason; }
-      }
+      // Distribution now happens in the CRM (create_hot_lead -> distribute_hot_leads),
+      // so no portal-side sale-operator assignment here.
 
-      // Portal assignment (role-scoping) stays as before; Stage 2 rewires routing.
+      // Portal operator_id (role-scoping for the portal UI) stays as before.
       let operatorId;
       if (user.role === 'operator') {
         operatorId = user.uid;
@@ -176,25 +147,50 @@ module.exports = async (req, res) => {
         );
       const leadId = insert.recordset[0].id;
 
-      // Record the sale-operator assignment (history + denormalised owner on the lead).
-      if (assignOp) {
-        await setAssignment(pool, sql, { leadId, op: assignOp, method: assignMethod, reason: assignReason, assignedBy: user.uid });
-      }
-
-      const histText = ('Lead created · ' + (source || 'manual')
-        + (assignOp ? ' · → ' + assignOp.name + ' (' + assignOp.groupName + ')' : '')).slice(0, 400);
       await pool.request()
         .input('leadId', sql.Int, leadId)
-        .input('text', sql.NVarChar(400), histText)
+        .input('text', sql.NVarChar(400), ('Lead created · ' + (source || 'manual')).slice(0, 400))
         .input('actorId', sql.Int, user.uid)
         .query('INSERT INTO dbo.lead_history (lead_id, text, actor_id) VALUES (@leadId, @text, @actorId)');
 
-      const opRow = (await pool.request().input('id', sql.Int, operatorId)
-        .query('SELECT name FROM dbo.users WHERE id = @id')).recordset[0];
+      // ----- Push into the CRM as a hot lead; the CRM distributes it (min-count). -----
+      let crm = null;
+      try {
+        const r = await pool.request()
+          .input('phone', sql.NVarChar(40), phoneNorm || phoneRaw)
+          .input('name', sql.NVarChar(200), name || phoneRaw)
+          .input('language', sql.NVarChar(20), language || 'georgian')
+          .input('region', sql.NVarChar(120), city || null)
+          .input('clienttype', sql.NVarChar(20), customerType === 'dealer' ? 'Dealer' : 'Retail')
+          .input('source', sql.NVarChar(60), source || null)
+          .input('comment', sql.NVarChar(sql.MAX), additionalComment || null)
+          .output('out_cid', sql.Numeric(18, 0))
+          .output('out_lid', sql.Numeric(18, 0))
+          .output('out_action', sql.NVarChar(40))
+          .execute('crm.dbo.create_hot_lead');
+        crm = { cid: r.output.out_cid, lid: r.output.out_lid, action: r.output.out_action };
+        await pool.request()
+          .input('id', sql.Int, leadId)
+          .input('cid', sql.Numeric(18, 0), crm.cid)
+          .input('lid', sql.Numeric(18, 0), crm.lid)
+          .input('act', sql.NVarChar(40), crm.action)
+          .query('UPDATE dbo.leads SET crm_cid = @cid, crm_lid = @lid, crm_action = @act WHERE id = @id');
+        await pool.request()
+          .input('leadId', sql.Int, leadId)
+          .input('text', sql.NVarChar(400), ('Pushed to CRM · ' + (crm.action || '') + ' · loan ' + (crm.lid || '')).slice(0, 400))
+          .input('actorId', sql.Int, user.uid)
+          .query('INSERT INTO dbo.lead_history (lead_id, text, actor_id) VALUES (@leadId, @text, @actorId)');
+      } catch (e) {
+        // Keep the portal record even if the CRM push fails; flag it in history.
+        await pool.request()
+          .input('leadId', sql.Int, leadId)
+          .input('text', sql.NVarChar(400), ('CRM push failed: ' + e.message).slice(0, 400))
+          .input('actorId', sql.Int, user.uid)
+          .query('INSERT INTO dbo.lead_history (lead_id, text, actor_id) VALUES (@leadId, @text, @actorId)');
+      }
 
       return send(res, 201, {
-        id: leadId, operatorId, operatorName: opRow ? opRow.name : null,
-        saleOperator: assignOp ? { id: assignOp.id, name: assignOp.name, group: assignOp.groupName, reason: assignReason } : null,
+        id: leadId, operatorId, crm,
         parsed: shortMode ? { name, phone: phoneRaw, source, customerType, country, city, additionalComment } : null,
       });
     } catch (err) {

@@ -38,25 +38,30 @@ module.exports = async (req, res) => {
     );
     const newToday = todayRes.recordset[0].c;
 
-    // Operator load (managers only — open leads per operator).
+    // Sale-operator load (managers only) — portal leads per CRM operator, from the
+    // CRM assignment (crm_lid -> loans.AID -> mirrored operator), excluding the pool.
     let operatorLoad = [];
     if (isManager) {
       const loadRes = await pool.request().query(
-        `SELECT u.id, u.name, u.branch,
+        `SELECT so.name, so.group_name AS branch,
                 SUM(CASE WHEN l.status NOT IN ('won','lost') THEN 1 ELSE 0 END) AS open_count
-         FROM dbo.users u
-         LEFT JOIN dbo.leads l ON l.operator_id = u.id
-         WHERE u.role = 'operator' AND u.active = 1
-         GROUP BY u.id, u.name, u.branch
-         ORDER BY u.id`
+         FROM dbo.leads l
+         JOIN crm.dbo.loans cl ON cl.ID = l.crm_lid
+         JOIN dbo.sale_operators so ON so.crm_user_id = cl.AID
+         WHERE cl.AID <> 1574
+         GROUP BY so.name, so.group_name
+         HAVING SUM(CASE WHEN l.status NOT IN ('won','lost') THEN 1 ELSE 0 END) > 0
+         ORDER BY open_count DESC`
       );
       operatorLoad = loadRes.recordset.map((r) => ({ name: r.name, branch: r.branch, open: r.open_count || 0 }));
     }
 
-    // Recent leads (4 newest in scope).
+    // Recent leads (4 newest in scope) — owner reflected from the CRM.
     const recentRes = await mk().query(
-      `SELECT TOP 4 l.id, l.name, l.phone, l.service, l.status, u.name AS operator
-       FROM dbo.leads l LEFT JOIN dbo.users u ON u.id = l.operator_id${scope}
+      `SELECT TOP 4 l.id, l.name, l.phone, l.service, l.status, so.name AS operator
+       FROM dbo.leads l
+       LEFT JOIN crm.dbo.loans cl ON cl.ID = l.crm_lid
+       LEFT JOIN dbo.sale_operators so ON so.crm_user_id = cl.AID${scope}
        ORDER BY l.created_at DESC`
     );
 

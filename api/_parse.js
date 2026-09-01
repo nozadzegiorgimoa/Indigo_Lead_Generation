@@ -7,16 +7,19 @@ const { detectSource, stripSourceMentions } = require('./_sources');
 
 // Tokens that should never be part of a name (sources, channels, connectors,
 // customer-type words) — used to stop name capture and to clean the leftover.
-const STOP_WORD = /(facebook|fb|insta(gram)?|ig|whats\s*app|whatsapp|votsap|viber|tik\s*tok|tiktok|meta|lead|form|retail|dealer|call|number|tel|mob|ფეისბუ|ფბ|ინსტა|ვოთსაფ|ვაცაპ|ვაიბერ|ტი[კქ]ტო[კქ]|სადილერო|საცალო|რითეილ|დილერ|ზარი|დარეკ|საიტ|ნომერი|ნომ|მობ|ტელ)/iu;
+const STOP_WORD = /(facebook|fb|insta(gram)?|ig|whats\s*app|whatsapp|votsap|viber|tik\s*tok|tiktok|meta|lead|form|retail|dealer|call|number|tel|mob|ფეისბუ|ფბ|ინსტა|ვოთსაფ|ვოცაფ|ვაცაპ|ვაცაფ|ვაიბერ|ტი[კქ]ტო[კქ]|ლიდი|სადილერო|საცალო|რითეილ|დილერ|ზარი|დარეკ|საიტ|ნომერი|ნომ|მობ|ტელ)/iu;
 
 // Known Georgian cities (extend as needed). Used only for explicit mentions.
+// Georgian glues suffixes, and \b is not Unicode-aware, so use a leading
+// letter-boundary and prefix-match (e.g. "ქუთაისი", "ქუთაისიდან" both hit).
 const CITY_HINTS = [
-  { city: 'Tbilisi', re: /\b(tbilisi|თბილის)/i },
-  { city: 'Batumi',  re: /\b(batumi|ბათუმ)/i },
-  { city: 'Kutaisi', re: /\b(kutaisi|ქუთაის)/i },
-  { city: 'Rustavi', re: /\b(rustavi|რუსთავ)/i },
-  { city: 'Gori',    re: /\b(gori|გორ)\b/i },
-  { city: 'Marneuli',re: /\b(marneuli|მარნეულ)/i },
+  { city: 'Tbilisi',  re: /(?<![\p{L}])(tbilisi|თბილის)/iu },
+  { city: 'Batumi',   re: /(?<![\p{L}])(batumi|ბათუმ)/iu },
+  { city: 'Kutaisi',  re: /(?<![\p{L}])(kutaisi|ქუთაის)/iu },
+  { city: 'Rustavi',  re: /(?<![\p{L}])(rustavi|რუსთავ)/iu },
+  { city: 'Gori',     re: /(?<![\p{L}])(gori|გორი)/iu },
+  { city: 'Marneuli', re: /(?<![\p{L}])(marneuli|მარნეულ)/iu },
+  { city: 'Zugdidi',  re: /(?<![\p{L}])(zugdidi|ზუგდიდ)/iu },
 ];
 
 function detectCustomerType(text) {
@@ -33,32 +36,49 @@ function detectCity(text) {
 }
 
 // Pull the tail after an "sms"/"სმს" marker (keep the text, drop the marker word).
+const SMS_MARK = /(?:^|[\s\n])(?:sms|სმს)\s*[:：]?\s*/i;
 function extractSmsTail(text) {
-  const m = /\b(sms|სმს)\b[\s:—\-]*([\s\S]*)$/i.exec(text);
-  return m && m[2] ? m[2].trim() : null;
+  const m = new RegExp(SMS_MARK.source + '([\\s\\S]*)$', 'i').exec(text);
+  return m && m[1] ? m[1].trim() : null;
 }
 
 const PHONE_RUN = /[+(]?\d[\d\s().-]{3,}\d/g;   // phone-like digit runs
 
-// Heuristic name: the leading 1-2 alphabetic words (Latin or Georgian), before
-// any phone run, source word, connector or punctuation. Low-confidence by
-// nature; the operator can correct it in the full form.
+function isCityToken(tok) {
+  for (const h of CITY_HINTS) if (h.re.test(tok)) return true;
+  return false;
+}
+
+// Pull leading name tokens from ONE line: after removing any phone run, take
+// 1-3 consecutive letter-words, stopping at a source/type/connector/city word.
+function nameTokensFrom(line) {
+  const noPhone = line.replace(PHONE_RUN, ' ').trim();
+  if (!noPhone) return null;
+  const toks = noPhone.split(/[\s,]+/).filter(Boolean);
+  const nameToks = [];
+  for (const raw of toks) {
+    const tok = raw.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, '');   // trim non-letters
+    if (!tok || !/\p{L}/u.test(tok)) break;
+    if (STOP_WORD.test(tok) || isCityToken(tok)) break;
+    nameToks.push(tok);
+    if (nameToks.length >= 3) break;                          // first (+patronymic) + surname
+  }
+  return nameToks.length ? nameToks.join(' ') : null;
+}
+
+// Heuristic name: leads come both inline (name before the phone/source) and
+// field-per-line (name on its own row). Scan every line and take the first that
+// yields a plausible name — header rows (source/type), the phone row, the city
+// row and the sms tail are skipped.
 function guessName(text) {
   if (!text) return null;
-  const firstLine = text.split(/[\n;|]/)[0];
-  const cleaned = firstLine.replace(PHONE_RUN, ' ').trim();
-  const tokens = cleaned.split(/[\s,]+/).filter(Boolean);
-  const nameTokens = [];
-  for (const raw of tokens) {
-    const tok = raw.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, '');  // trim non-letters
-    if (!tok) break;
-    if (!/\p{L}/u.test(tok)) break;
-    if (STOP_WORD.test(tok)) break;
-    nameTokens.push(tok);
-    if (nameTokens.length >= 2) break;                       // name + surname
+  const lines = text.split(/[\r\n;|]+/).map(s => s.trim()).filter(Boolean);
+  for (const line of lines) {
+    if (/^\s*(sms|სმს)\b/i.test(line)) continue;             // sms tail line
+    const nm = nameTokensFrom(line);
+    if (nm && nm.length >= 2) return nm;
   }
-  const name = nameTokens.join(' ').trim();
-  return name.length >= 2 ? name : null;
+  return null;
 }
 
 // Build the leftover comment: strip the phone, recognised source words, the
@@ -66,13 +86,14 @@ function guessName(text) {
 // tail (marker word removed).
 function buildAdditional(text, { name }) {
   const smsTail = extractSmsTail(text);
-  let rest = text.replace(/(?:^|\s)(sms|სმს)\b[\s:：—\-]*[\s\S]*$/i, ' ');
+  let rest = text.replace(new RegExp(SMS_MARK.source + '[\\s\\S]*$', 'i'), ' ');
   rest = rest.replace(PHONE_RUN, ' ');
   rest = stripSourceMentions(rest);
   rest = rest.replace(/(სადილერო|საცალო|რითეილ|დილერ|retail|dealer|b2b|b2c)/giu, ' ');
-  rest = rest.replace(/(?<![\p{L}])(ნომერი|ნომ|number|tel|mob)\p{L}*/giu, ' ');   // connector words
+  rest = rest.replace(/(?<![\p{L}])(ნომერი|ნომ|number|tel|mob|ლიდი)\p{L}*/giu, ' ');   // connector words
+  for (const h of CITY_HINTS) rest = rest.replace(new RegExp(h.re.source + '\\p{L}*', 'giu'), ' ');  // drop city word
   if (name) for (const part of name.split(/\s+/)) rest = rest.replace(new RegExp('(^|\\P{L})' + escapeRe(part) + '(\\P{L}|$)', 'giu'), ' ');
-  rest = rest.replace(/\s{2,}/g, ' ').replace(/^[\s,;.\-–—:]+|[\s,;.\-–—:]+$/g, '').trim();
+  rest = rest.replace(/[\r\n]+/g, ' ').replace(/\s{2,}/g, ' ').replace(/^[\s,;.\-–—:]+|[\s,;.\-–—:]+$/g, '').trim();
   const parts = [];
   if (rest) parts.push(rest);
   if (smsTail) parts.push(smsTail);
