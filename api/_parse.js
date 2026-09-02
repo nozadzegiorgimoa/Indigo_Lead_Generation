@@ -7,7 +7,7 @@ const { detectSource, stripSourceMentions } = require('./_sources');
 
 // Tokens that should never be part of a name (sources, channels, connectors,
 // customer-type words) — used to stop name capture and to clean the leftover.
-const STOP_WORD = /(facebook|fb|insta(gram)?|ig|whats\s*app|whatsapp|votsap|viber|tik\s*tok|tiktok|meta|lead|form|retail|dealer|call|number|tel|mob|ფეისბუ|ფბ|ინსტა|ვოთსაფ|ვოცაფ|ვაცაპ|ვაცაფ|ვაიბერ|ტი[კქ]ტო[კქ]|ლიდი|სადილერო|საცალო|რითეილ|დილერ|ზარი|დარეკ|საიტ|ნომერი|ნომ|მობ|ტელ)/iu;
+const STOP_WORD = /(facebook|fb|insta(gram)?|ig|whats\s*app|whatsapp|votsap|viber|tik\s*tok|tiktok|meta|lead|form|retail|dealer|call|number|tel|mob|ფეისბუ|ფბ|ინსტა|ვოთსაფ|ვოცაფ|ვაცაპ|ვაცაფ|ვაიბერ|ტი[კქ]ტო[კქ]|ლიდი|მეტა|ლიდ[ფგ]ორმა|სადილერო|საცალო|რითეილ|დილერ|ზარი|დარეკ|საიტ|ნომერი|ნომ|მობ|ტელ)/iu;
 
 // Known Georgian cities (extend as needed). Used only for explicit mentions.
 // Georgian glues suffixes, and \b is not Unicode-aware, so use a leading
@@ -57,9 +57,11 @@ function nameTokensFrom(line) {
   const toks = noPhone.split(/[\s,]+/).filter(Boolean);
   const nameToks = [];
   for (const raw of toks) {
+    if (raw.includes('@')) { if (nameToks.length) break; continue; }   // emails
     const tok = raw.replace(/^[^\p{L}]+|[^\p{L}]+$/gu, '');   // trim non-letters
-    if (!tok || !/\p{L}/u.test(tok)) break;
-    if (STOP_WORD.test(tok) || isCityToken(tok)) break;
+    const usable = tok && /\p{L}/u.test(tok) && !STOP_WORD.test(tok) && !isCityToken(tok);
+    // Skip leading header words (source/type/etc.); stop once the name run ends.
+    if (!usable) { if (nameToks.length) break; continue; }
     nameToks.push(tok);
     if (nameToks.length >= 3) break;                          // first (+patronymic) + surname
   }

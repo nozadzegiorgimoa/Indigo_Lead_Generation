@@ -11,7 +11,7 @@ const CANONICAL_SOURCES = [
 
 // Order matters: more specific first (Meta Lead Form before bare "meta").
 const SOURCE_RULES = [
-  { canonical: 'Meta Lead Form', re: /(?<![\p{L}])(meta\s*lead\s*form|lead\s*form|meta)(?![\p{L}])|(?<![\p{L}])(ლიდ\s*ფორმა|ლიდფორმა)/iu },
+  { canonical: 'Meta Lead Form', re: /(?<![\p{L}])(meta\s*lead\s*form|lead\s*form|meta)(?![\p{L}])|(?<![\p{L}])(ლიდ\s*[ფგ]ორმა|მეტა)(?![\p{L}])/iu },
   { canonical: 'Facebook',       re: /(?<![\p{L}])(facebook|fb)(?![\p{L}])|(?<![\p{L}])(ფეისბუ|ფბ)/iu },
   { canonical: 'Instagram',      re: /(?<![\p{L}])(instagram|insta|ig)(?![\p{L}])|(?<![\p{L}])ინსტა/iu },
   { canonical: 'WhatsApp',       re: /(?<![\p{L}])(whats\s*app|whatsapp|votsap|watsap)(?![\p{L}])|(?<![\p{L}])(ვოთსაფ|ვოცაფ|ვაცაპ|ვაცაფ)/iu },

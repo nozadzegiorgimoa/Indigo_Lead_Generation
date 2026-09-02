@@ -1,9 +1,10 @@
 -- crm.dbo.create_hot_lead — portal entry point for web leads.
--- Owner priority: manual @force_operator_id > web routing rules > pool.
+-- Owner priority: manual @force_operator_id > web rules > DIRECT min-count pick
+-- (same eligibility as distribute_hot_leads) > pool (only if nobody matched).
 -- Web rules: Ukrainian/Ukraine & Russian+Dealer -> least-loaded Russian op in
---   Markov's group (56); Russian+Retail -> Boris (1693). Min-count preserved.
--- Logs every assignment it makes into Indigo_Lead_Generation.dbo.lead_distribution_history.
--- Delta-native leads and manual Delta reassignments are unaffected here.
+-- Markov's group (56); Russian+Retail -> Boris (1693). Counts bumped on every
+-- direct assignment, so min-count fairness holds. Logs each assignment into
+-- Indigo_Lead_Generation.dbo.lead_distribution_history.
 CREATE OR ALTER PROCEDURE dbo.create_hot_lead
   @phone             nvarchar(40),
   @name              nvarchar(200),
@@ -35,8 +36,18 @@ BEGIN
   DECLARE @digits nvarchar(40) =
       REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(@phone,''),' ',''),'+',''),'-',''),'(','');
 
-  -- Owner resolution: manual pick -> web rules -> pool.
+  -- Matching region for distribution (mirrors distribute_hot_leads normalisation):
+  -- Marneuli -> Gori; unknown/unconfigured region -> Tbilisi.
+  DECLARE @dreg nvarchar(120) = CASE WHEN @reg = N'მარნეული' THEN N'გორი' ELSE @reg END;
+  IF NOT EXISTS (SELECT 1 FROM CRM_Helper.dbo.Users_for_leaddistribute
+                 WHERE StatusID = 1 AND Region = @dreg COLLATE SQL_Latin1_General_CP1_CI_AS)
+    SET @dreg = N'თბილისი';
+
+  ---------------------------------------------------------------------------
+  -- Owner: manual pick -> web rules -> direct min-count -> pool.
+  ---------------------------------------------------------------------------
   DECLARE @final_aid int = 1574, @rule nvarchar(60) = NULL;
+
   IF @force_operator_id IS NOT NULL
      AND EXISTS (SELECT 1 FROM crm.dbo.users u JOIN crm.dbo.usersgroups g ON g.ID = u.GroupID
                   WHERE u.ID = @force_operator_id AND g.Add3 = 1 AND u.Deleted IS NULL
@@ -63,6 +74,25 @@ BEGIN
     END
   END
 
+  -- Direct min-count pick (same eligibility as distribute_hot_leads).
+  IF @final_aid = 1574
+  BEGIN
+    SELECT TOP 1 @final_aid = a.UserID
+      FROM CRM_Helper.dbo.Users_for_leaddistribute a
+     WHERE a.Region = @dreg COLLATE SQL_Latin1_General_CP1_CI_AS
+       AND a.StatusID = 1
+       AND a.allowedretail = CASE WHEN @ct='Retail' THEN 1 ELSE CASE WHEN @dreg=N'თბილისი' THEN 0 ELSE 1 END END
+       AND a.alloweddealer = CASE WHEN @ct='Dealer' THEN 1 ELSE CASE WHEN @dreg=N'თბილისი' THEN 0 ELSE 1 END END
+       AND ( (@f14 = N'ქართული'   AND a.Georgian = 1)
+          OR (@f14 = N'რუსული'    AND a.Russian  = 1)
+          OR (@f14 = N'ინგლისური' AND a.English  = 1) )
+     ORDER BY CASE @f14 WHEN N'ქართული' THEN a.CountGeorgian
+                        WHEN N'რუსული'  THEN a.CountRussian
+                        ELSE a.CountEnglish END ASC, NEWID();
+    IF @final_aid <> 1574 SET @rule = 'mincount';
+  END
+
+  ---------------------------------------------------------------------------
   DECLARE @cid numeric(18,0) = (
       SELECT TOP 1 CID FROM crm.dbo.phones
       WHERE REPLACE(REPLACE(REPLACE(REPLACE(PhoneNumber,' ',''),'+',''),'-',''),'(','') = @digits
@@ -101,7 +131,7 @@ BEGIN
       SET @lid = SCOPE_IDENTITY();
   END
 
-  -- Keep min-count fair for a direct assignment (manual or rule).
+  -- Keep min-count fair for any direct assignment.
   IF @final_aid <> 1574
     UPDATE CRM_Helper.dbo.Users_for_leaddistribute
        SET CountGeorgian = CountGeorgian + CASE WHEN @f14 = N'ქართული'   THEN 1 ELSE 0 END,
@@ -109,7 +139,7 @@ BEGIN
            CountEnglish  = CountEnglish  + CASE WHEN @f14 = N'ინგლისური' THEN 1 ELSE 0 END
      WHERE UserID = @final_aid;
 
-  -- Log the assignment (proc-made) into the portal's local history.
+  -- Log the assignment into the portal's local history.
   DECLARE @toName nvarchar(225) = CASE WHEN @final_aid = 1574 THEN N'გასანაწილებელი ლიდები (pool)'
                                        ELSE (SELECT Name FROM crm.dbo.users WHERE ID = @final_aid) END;
   DECLARE @toGrp  nvarchar(200) = CASE WHEN @final_aid = 1574 THEN N'—'
@@ -117,7 +147,7 @@ BEGIN
   INSERT Indigo_Lead_Generation.dbo.lead_distribution_history
     (crm_lid, crm_cid, from_operator_id, to_operator_id, to_operator_name, to_group_name, method)
   VALUES (@lid, @cid, @old_aid, @final_aid, @toName, @toGrp,
-          N'portal:' + ISNULL(@rule, CASE WHEN @final_aid = 1574 THEN 'pool' ELSE 'assigned' END));
+          N'portal:' + ISNULL(@rule, 'pool'));
 
   SET @out_cid = @cid;
   SET @out_lid = @lid;
