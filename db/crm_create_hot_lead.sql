@@ -33,6 +33,9 @@ BEGIN
       WHEN 'rustavi'  THEN N'რუსთავი'  WHEN 'marneuli' THEN N'მარნეული'
       WHEN 'zugdidi'  THEN N'ზუგდიდი'  ELSE @reg END;
   DECLARE @ct  nvarchar(20)  = CASE WHEN @clienttype = 'Dealer' THEN 'Dealer' ELSE 'Retail' END;
+  -- No detected source -> 'Website form' (whitelisted), so the lead is never
+  -- invisible to the hot-leads report (271), which inner-joins the source list.
+  SET @source = ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(@source,N''))),N''), N'Website form');
   DECLARE @digits nvarchar(40) =
       REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(@phone,''),' ',''),'+',''),'-',''),'(','');
 
@@ -110,11 +113,28 @@ BEGIN
   END
   ELSE
   BEGIN
+      -- Existing client: fill EMPTY profile fields from the web lead so reports
+      -- (source whitelist) and future distribution keys work; never overwrite.
+      UPDATE crm.dbo.clients
+         SET F524 = CASE WHEN ISNULL(F524,N'') = N'' THEN @source ELSE F524 END,
+             F14  = CASE WHEN ISNULL(F14, N'') = N'' THEN @f14    ELSE F14  END,
+             F15  = CASE WHEN ISNULL(F15, N'') = N'' THEN @reg    ELSE F15  END,
+             F525 = CASE WHEN ISNULL(F525,N'') = N'' THEN @ct     ELSE F525 END,
+             F609 = CASE WHEN ISNULL(F609,N'') = N'' THEN @ct     ELSE F609 END
+       WHERE ID = @cid;
+
       SET @lid = (SELECT TOP 1 ID FROM crm.dbo.loans WHERE CID = @cid AND Stage = 7 ORDER BY Created DESC);
       IF @lid IS NOT NULL
       BEGIN
           SET @old_aid = (SELECT AID FROM crm.dbo.loans WHERE ID = @lid);
-          UPDATE crm.dbo.loans SET State = 174, AID = @final_aid, Updated = SYSUTCDATETIME() WHERE ID = @lid;
+          -- Reheat: keep any existing comment; append the new web comment (F145=კომენტარი).
+          UPDATE crm.dbo.loans
+             SET State = 174, AID = @final_aid, Updated = SYSUTCDATETIME(),
+                 F145 = CASE WHEN ISNULL(@comment,N'') = N'' THEN F145
+                             WHEN ISNULL(F145,N'') = N'' THEN @comment
+                             WHEN CHARINDEX(@comment, F145) > 0 THEN F145
+                             ELSE F145 + N' | ' + @comment END
+           WHERE ID = @lid;
           SET @out_action = 'reheated';
       END
       ELSE SET @out_action = 'new_lead_existing_client';
@@ -124,10 +144,10 @@ BEGIN
   BEGIN
       INSERT crm.dbo.loans
         (Created, Updated, CID, PID, GID, EID, Currency, CurrencyPen, Region, Unit,
-         Stage, State, LoanType, LoanSubType, ENumber, GNumber, Account, AID)
+         Stage, State, LoanType, LoanSubType, ENumber, GNumber, Account, AID, F145)
       VALUES
         (SYSUTCDATETIME(), SYSUTCDATETIME(), @cid, 2, 0, 0, 2, 2, 3, N'',
-         7, 174, N'', N'', N'', N'', N'', @final_aid);
+         7, 174, N'', N'', N'', N'', N'', @final_aid, NULLIF(@comment,N''));
       SET @lid = SCOPE_IDENTITY();
   END
 
@@ -138,6 +158,12 @@ BEGIN
            CountRussian  = CountRussian  + CASE WHEN @f14 = N'რუსული'    THEN 1 ELSE 0 END,
            CountEnglish  = CountEnglish  + CASE WHEN @f14 = N'ინგლისური' THEN 1 ELSE 0 END
      WHERE UserID = @final_aid;
+
+  -- Feed the CRM's distribution working table so the Delta report
+  -- "ცხელი ლიდები განაწილება" (297) includes web leads too.
+  IF @final_aid <> 1574
+    INSERT CRM_Helper.dbo.lead_to_distiribute (leadID, CID, clienttype, [language], region, Newuserid, insertdate)
+    VALUES (@lid, @cid, @ct, @f14, @reg, @final_aid, GETDATE());
 
   -- Log the assignment into the portal's local history.
   DECLARE @toName nvarchar(225) = CASE WHEN @final_aid = 1574 THEN N'გასანაწილებელი ლიდები (pool)'
