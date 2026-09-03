@@ -45,6 +45,18 @@ BEGIN
     SET @dreg = N'თბილისი';
 
   ---------------------------------------------------------------------------
+  -- Known client? Their stored type wins over a defaulted 'Retail' (a dealer
+  -- client stays dealer-routed even when the new comment omits the word).
+  ---------------------------------------------------------------------------
+  DECLARE @cid numeric(18,0) = (
+      SELECT TOP 1 CID FROM crm.dbo.phones
+      WHERE REPLACE(REPLACE(REPLACE(REPLACE(PhoneNumber,' ',''),'+',''),'-',''),'(','') = @digits
+      ORDER BY ID DESC);
+  IF @cid IS NOT NULL AND @ct = 'Retail'
+     AND EXISTS (SELECT 1 FROM crm.dbo.clients WHERE ID = @cid AND F525 = 'Dealer')
+    SET @ct = 'Dealer';
+
+  ---------------------------------------------------------------------------
   -- Owner: manual pick -> web rules -> fair rotation -> pool.
   ---------------------------------------------------------------------------
   DECLARE @final_aid int = 1574, @rule nvarchar(60) = NULL;
@@ -110,10 +122,6 @@ BEGIN
   END
 
   ---------------------------------------------------------------------------
-  DECLARE @cid numeric(18,0) = (
-      SELECT TOP 1 CID FROM crm.dbo.phones
-      WHERE REPLACE(REPLACE(REPLACE(REPLACE(PhoneNumber,' ',''),'+',''),'-',''),'(','') = @digits
-      ORDER BY ID DESC);
   DECLARE @lid numeric(18,0) = NULL, @old_aid int = NULL;
 
   IF @cid IS NULL
