@@ -58,7 +58,10 @@ module.exports = async (req, res) => {
 
     // Recent leads (4 newest in scope) — owner reflected from the CRM.
     const recentRes = await mk().query(
-      `SELECT TOP 4 l.id, l.name, l.phone, l.service, l.status, so.name AS operator
+      `SELECT TOP 4 l.id,
+              COALESCE(l.name, l.name_processed, l.phone, l.phone_processed) AS name,
+              COALESCE(l.phone, l.phone_processed) AS phone,
+              l.service, l.status, so.name AS operator
        FROM dbo.leads l
        LEFT JOIN crm.dbo.loans cl ON cl.ID = l.crm_lid
        LEFT JOIN dbo.sale_operators so ON so.crm_user_id = cl.AID${scope}

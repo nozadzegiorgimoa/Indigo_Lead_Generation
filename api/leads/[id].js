@@ -98,16 +98,31 @@ module.exports = async (req, res) => {
 };
 
 function shape(l) {
+  // Display values = effective (entered ?? processed); `entered` and `processed`
+  // expose the untouched originals so provenance is always visible.
   return {
-    id: l.id, name: l.name, phone: l.phone, email: l.email, channel: l.channel,
+    id: l.id,
+    name: l.name || l.name_processed || l.phone || l.phone_processed,
+    phone: l.phone || l.phone_processed,
+    email: l.email, channel: l.channel,
     branch: l.branch, service: l.service, car: l.car, budget: l.budget,
-    source: l.source, notes: l.notes, followUp: l.follow_up, status: l.status,
+    source: l.source || l.source_processed,
+    notes: l.notes, followUp: l.follow_up, status: l.status,
     operatorId: l.operator_id, operator: l.operator_name, operatorBranch: l.operator_branch,
-    language: l.language, customerType: l.customer_type, country: l.country, city: l.city,
+    language: l.language,
+    customerType: l.customer_type || l.customer_type_processed || 'retail',
+    country: l.country || l.country_processed,
+    city: l.city || l.city_processed,
     additionalComment: l.additional_comment,
     saleOperatorId: l.sale_operator_id, saleOperator: l.sale_operator_name,
     saleGroupId: l.sale_group_id, saleGroup: l.sale_group_name,
     createdAt: l.created_at,
+    entered: { name: l.name, phone: l.phone, source: l.source,
+               customerType: l.customer_type, country: l.country, city: l.city,
+               saleOperatorId: l.sale_operator_id, saleOperator: l.sale_operator_name },
+    processed: { name: l.name_processed, phone: l.phone_processed, source: l.source_processed,
+                 customerType: l.customer_type_processed, country: l.country_processed,
+                 city: l.city_processed },
   };
 }
 

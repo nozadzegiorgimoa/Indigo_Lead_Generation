@@ -27,13 +27,17 @@ module.exports = async (req, res) => {
       if (user.role !== 'manager') { clauses.push('l.operator_id = @uid'); reqd.input('uid', sql.Int, user.uid); }
       if (status && STATUS_IDS.includes(status)) { clauses.push('l.status = @status'); reqd.input('status', sql.NVarChar(20), status); }
       if (q) {
-        clauses.push('(LOWER(l.name) LIKE @q OR LOWER(ISNULL(l.phone,\'\')) LIKE @q OR LOWER(ISNULL(l.car,\'\')) LIKE @q)');
+        clauses.push('(LOWER(ISNULL(l.name, ISNULL(l.name_processed,\'\'))) LIKE @q OR LOWER(ISNULL(l.phone, ISNULL(l.phone_processed,\'\'))) LIKE @q OR LOWER(ISNULL(l.car,\'\')) LIKE @q)');
         reqd.input('q', sql.NVarChar(200), '%' + q + '%');
       }
       const where = clauses.length ? ' WHERE ' + clauses.join(' AND ') : '';
+      // Display = effective (entered ?? processed); raw stays untouched in the table.
       // The real owner comes from the CRM (via crm_lid -> loans.AID -> mirrored operator).
       const result = await reqd.query(
-        `SELECT l.id, l.name, l.phone, l.service, l.car, l.branch, l.status,
+        `SELECT l.id,
+                COALESCE(l.name, l.name_processed, l.phone, l.phone_processed) AS name,
+                COALESCE(l.phone, l.phone_processed) AS phone,
+                l.service, l.car, l.branch, l.status,
                 so.name AS operator, so.group_name AS operator_group, l.crm_lid
          FROM dbo.leads l
          LEFT JOIN crm.dbo.loans cl ON cl.ID = l.crm_lid
@@ -52,15 +56,37 @@ module.exports = async (req, res) => {
       const b = await readJson(req);
       const shortMode = b.formMode === 'short';
 
-      // In short mode, parse the comment blob; explicit body fields still win.
+      // ===== PROVENANCE MODEL =====
+      // ENTERED (raw, stored in the base columns): exactly what the person typed/
+      // picked on the portal — never merged with parser output, NULL when blank.
+      // PROCESSED (stored in *_processed): what the parser extracted from the
+      // comment. EFFECTIVE (entered ?? processed) is used for validation, dedup
+      // and the CRM push, but is never written over either original.
       const parsed = shortMode ? parseComment(b.notes, { defaultCountry: 'GE' })
                                : { name: null, phone: null, phoneInfo: null, country: null, city: null, source: null, customerType: null, additionalComment: null };
 
-      const name = (b.name || parsed.name || '').trim();
-      const phoneRaw = (b.phone || parsed.phone || '').trim();
+      // --- entered (raw) ---
+      const entName    = (b.name || '').trim() || null;
+      const entPhone   = (b.phone || '').trim() || null;
+      const entSource  = shortMode ? null : ((b.source || '').trim() || null);
+      const entType    = shortMode ? null : (CUSTOMER_TYPES.includes(b.customerType) ? b.customerType : null);
+      const entCountry = shortMode ? null : ((b.country || '').trim() || null);
+      const entCity    = shortMode ? null : ((b.city || '').trim() || null);
+      const language   = LANGUAGES.includes(b.language) ? b.language : null;  // dropdown = entered
+      const service    = SERVICE_IDS.includes(b.service) ? b.service : 'import';
+
+      // --- processed (parser/ML) ---
+      const procName   = parsed.name || null;
+      const procPhone  = parsed.phone || null;
+      const procSource = parsed.source || null;
+      const procType   = CUSTOMER_TYPES.includes(parsed.customerType) ? parsed.customerType : null;
+
+      // --- effective (entered wins) ---
+      const name = entName || procName || '';
+      const phoneRaw = entPhone || procPhone || '';
       if (!name && !phoneRaw) return send(res, 400, { error: 'A lead needs at least a name or a phone number.' });
 
-      // ----- Phone validation + country detection -----
+      // ----- Phone validation + country detection (on the effective phone) -----
       const phoneInfo = analyzePhone(phoneRaw, 'GE');
       if ((!phoneInfo.found || !phoneInfo.valid) && !b.confirmInvalidPhone) {
         return send(res, 422, {
@@ -72,29 +98,25 @@ module.exports = async (req, res) => {
         });
       }
       const phoneNorm = phoneInfo.normalized || null;
-      // Duplicate handling is delegated to the CRM (create_hot_lead: existing phone
-      // -> reuse the client and add a Stage-7 lead), so no portal-side 409 here.
+      // Duplicate handling is delegated to the CRM (create_hot_lead reuses the client).
 
-      // ----- Field resolution + defaults -----
-      // In SHORT mode the only typed inputs are the sale operator, the speaking
-      // language and the comment; source/customer-type/country/city all come from
-      // parsing, so parsed values win and the form's hidden defaults never override
-      // them. In FULL mode the explicit fields win, with parsing as a fallback.
-      const service = SERVICE_IDS.includes(b.service) ? b.service : 'import';
-      const language = LANGUAGES.includes(b.language) ? b.language : null;
-      const customerType = shortMode
-        ? (CUSTOMER_TYPES.includes(parsed.customerType) ? parsed.customerType : 'retail')
-        : (CUSTOMER_TYPES.includes(b.customerType) ? b.customerType : (parsed.customerType || 'retail'));
-      const source = shortMode
-        ? (parsed.source || null)
-        : (normalizeSource(b.source) || parsed.source || null);
-      let country = (shortMode ? (parsed.country || phoneInfo.countryName)
-                               : (b.country || parsed.country || phoneInfo.countryName)) || '';
-      country = country.toString().trim() || null;
-      let city = (shortMode ? (parsed.city || '') : (b.city || parsed.city || '')).toString().trim() || null;
-      if (!city && phoneInfo.country === 'GE') city = 'Tbilisi';   // GE default
+      const procCountry = parsed.country || phoneInfo.countryName || null;        // derived
+      const procCity    = parsed.city || (phoneInfo.country === 'GE' ? 'Tbilisi' : null);
+
+      const customerType = entType || procType || 'retail';
+      const source  = entSource || procSource || null;
+      const country = entCountry || procCountry || null;
+      const city    = entCity || procCity || null;
       const additionalComment = shortMode ? (parsed.additionalComment || null)
                                           : ((b.additionalComment || '').trim() || null);
+
+      // --- raw manual sale-operator pick (persisted from the mirror) ---
+      let pickedOp = null;
+      if (b.saleOperatorId) {
+        pickedOp = (await pool.request().input('sid', sql.Int, Number(b.saleOperatorId)).query(
+          'SELECT crm_user_id, name, group_id, group_name FROM dbo.sale_operators WHERE crm_user_id = @sid'
+        )).recordset[0] || null;
+      }
 
       // Distribution now happens in the CRM (create_hot_lead -> distribute_hot_leads),
       // so no portal-side sale-operator assignment here.
@@ -115,35 +137,50 @@ module.exports = async (req, res) => {
       }
 
       const insert = await pool.request()
-        .input('name', sql.NVarChar(160), name || phoneRaw)
-        .input('phone', sql.NVarChar(60), phoneRaw || null)
-        .input('phoneNorm', sql.NVarChar(40), phoneNorm)
+        .input('name', sql.NVarChar(160), entName)                       // RAW entered only
+        .input('phone', sql.NVarChar(60), entPhone)
+        .input('phoneNorm', sql.NVarChar(40), phoneNorm)                 // technical (effective)
         .input('email', sql.NVarChar(190), (b.email || '').trim() || null)
         .input('channel', sql.NVarChar(40), b.channel || null)
         .input('branch', sql.NVarChar(120), b.branch || null)
         .input('service', sql.NVarChar(40), service)
         .input('car', sql.NVarChar(200), (b.car || '').trim() || null)
         .input('budget', sql.NVarChar(60), (b.budget || '').trim() || null)
-        .input('source', sql.NVarChar(60), source)
+        .input('source', sql.NVarChar(60), entSource)
         .input('notes', sql.NVarChar(sql.MAX), (b.notes || '').trim() || null)
         .input('followUp', sql.Date, b.followUp || null)
         .input('operatorId', sql.Int, operatorId)
         .input('language', sql.NVarChar(20), language)
-        .input('customerType', sql.NVarChar(20), customerType)
-        .input('country', sql.NVarChar(80), country)
-        .input('city', sql.NVarChar(120), city)
+        .input('customerType', sql.NVarChar(20), entType)
+        .input('country', sql.NVarChar(80), entCountry)
+        .input('city', sql.NVarChar(120), entCity)
         .input('additional', sql.NVarChar(sql.MAX), additionalComment)
         .input('formMode', sql.NVarChar(10), shortMode ? 'short' : 'full')
+        .input('pName', sql.NVarChar(160), procName)                     // PROCESSED (parser)
+        .input('pPhone', sql.NVarChar(60), procPhone)
+        .input('pSource', sql.NVarChar(60), procSource)
+        .input('pType', sql.NVarChar(20), procType)
+        .input('pCity', sql.NVarChar(120), procCity)
+        .input('pCountry', sql.NVarChar(80), procCountry)
+        .input('soId', sql.Int, pickedOp ? pickedOp.crm_user_id : null)  // RAW manual pick
+        .input('soName', sql.NVarChar(225), pickedOp ? pickedOp.name : null)
+        .input('sgId', sql.Int, pickedOp ? pickedOp.group_id : null)
+        .input('sgName', sql.NVarChar(200), pickedOp ? pickedOp.group_name : null)
         .query(
           `INSERT INTO dbo.leads
              (name, phone, phone_normalized, email, channel, branch, service, car, budget, source,
               notes, follow_up, status, operator_id, language, customer_type, country, city,
-              additional_comment, form_mode)
+              additional_comment, form_mode,
+              name_processed, phone_processed, source_processed, customer_type_processed,
+              city_processed, country_processed,
+              sale_operator_id, sale_operator_name, sale_group_id, sale_group_name)
            OUTPUT INSERTED.id
            VALUES
              (@name, @phone, @phoneNorm, @email, @channel, @branch, @service, @car, @budget, @source,
               @notes, @followUp, 'new', @operatorId, @language, @customerType, @country, @city,
-              @additional, @formMode)`
+              @additional, @formMode,
+              @pName, @pPhone, @pSource, @pType, @pCity, @pCountry,
+              @soId, @soName, @sgId, @sgName)`
         );
       const leadId = insert.recordset[0].id;
 
