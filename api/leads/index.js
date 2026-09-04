@@ -205,8 +205,23 @@ module.exports = async (req, res) => {
           .output('out_cid', sql.Numeric(18, 0))
           .output('out_lid', sql.Numeric(18, 0))
           .output('out_action', sql.NVarChar(40))
+          .output('out_note', sql.NVarChar(300))
           .execute('crm.dbo.create_hot_lead');
-        crm = { cid: r.output.out_cid, lid: r.output.out_lid, action: r.output.out_action };
+        crm = { cid: r.output.out_cid, lid: r.output.out_lid, action: r.output.out_action,
+                note: r.output.out_note || null };
+        if (crm.action === 'blocked') {
+          // CRM refused to auto-assign (previous owner invalid): flag the portal
+          // lead for a human and surface the reason to the person who entered it.
+          await pool.request()
+            .input('id', sql.Int, leadId)
+            .input('cid', sql.Numeric(18, 0), crm.cid)
+            .query("UPDATE dbo.leads SET crm_cid = @cid, crm_action = 'blocked', status = 'blocked' WHERE id = @id");
+          await pool.request()
+            .input('leadId', sql.Int, leadId)
+            .input('text', sql.NVarChar(400), ('BLOCKED — not distributed: ' + (crm.note || 'previous owner invalid') + '. Re-submit with a manually selected sale operator.').slice(0, 400))
+            .input('actorId', sql.Int, user.uid)
+            .query('INSERT INTO dbo.lead_history (lead_id, text, actor_id) VALUES (@leadId, @text, @actorId)');
+        } else {
         await pool.request()
           .input('id', sql.Int, leadId)
           .input('cid', sql.Numeric(18, 0), crm.cid)
@@ -218,6 +233,7 @@ module.exports = async (req, res) => {
           .input('text', sql.NVarChar(400), ('Pushed to CRM · ' + (crm.action || '') + ' · loan ' + (crm.lid || '')).slice(0, 400))
           .input('actorId', sql.Int, user.uid)
           .query('INSERT INTO dbo.lead_history (lead_id, text, actor_id) VALUES (@leadId, @text, @actorId)');
+        }
       } catch (e) {
         // Keep the portal record even if the CRM push fails; flag it in history.
         await pool.request()

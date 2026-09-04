@@ -5,8 +5,8 @@ const { requireUser, send, readJson } = require('../_auth');
 const { getOperator } = require('../_distribute');
 const { setAssignment } = require('../_assign');
 
-const STATUS_IDS = ['new', 'contacted', 'quoted', 'won', 'lost'];
-const STATUS_LABEL = { new: 'New', contacted: 'Contacted', quoted: 'Quoted', won: 'Won', lost: 'Lost' };
+const STATUS_IDS = ['new', 'contacted', 'quoted', 'won', 'lost', 'blocked'];
+const STATUS_LABEL = { new: 'New', contacted: 'Contacted', quoted: 'Quoted', won: 'Won', lost: 'Lost', blocked: 'Blocked' };
 
 module.exports = async (req, res) => {
   const user = requireUser(req, res);

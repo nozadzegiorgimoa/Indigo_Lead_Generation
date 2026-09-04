@@ -3,7 +3,7 @@
 const { sql, getPool } = require('./_db');
 const { requireUser, send } = require('./_auth');
 
-const STATUS_IDS = ['new', 'contacted', 'quoted', 'won', 'lost'];
+const STATUS_IDS = ['new', 'contacted', 'quoted', 'won', 'lost', 'blocked'];
 
 module.exports = async (req, res) => {
   const user = requireUser(req, res);

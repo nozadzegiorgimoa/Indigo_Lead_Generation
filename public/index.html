@@ -284,7 +284,8 @@ const STATUSES = [
   { id:"contacted", en:"Contacted", ka:"დაკავშირებული", bg:"#FFF4DE", fg:"#9A6B06", bar:"#E0A11B" },
   { id:"quoted", en:"Quoted", ka:"შეთავაზება", bg:"#E6F1FE", fg:"#1D5FA8", bar:"#2E7CD6" },
   { id:"won", en:"Won", ka:"მოგებული", bg:"#E4F5EC", fg:"#146A48", bar:"#1F9D6B" },
-  { id:"lost", en:"Lost", ka:"დაკარგული", bg:"#FDECEC", fg:"#A83A3A", bar:"#D14B4B" }
+  { id:"lost", en:"Lost", ka:"დაკარგული", bg:"#FDECEC", fg:"#A83A3A", bar:"#D14B4B" },
+  { id:"blocked", en:"Blocked", ka:"დაბლოკილი", bg:"#FBE9E9", fg:"#8A1F1F", bar:"#B32424" }
 ];
 const BRANCHES = ["Tbilisi · Avlabari","Gori","Kutaisi","Batumi","Marneuli","USA · Keyport NJ"];
 const SOURCES = ["Website form","Facebook","Instagram","Meta Lead Form","WhatsApp","Viber","TikTok","Phone call","Walk-in","Referral"];
@@ -710,8 +711,19 @@ async function submitLead(confirmInvalid) {
   // Success.
   state.form = { ...EMPTY };
   state.view = "detail"; state.selectedId = data.id;
-  const who = data.saleOperator ? data.saleOperator.name : (data.operatorName || "");
-  state.toast = tr.saved + who;
+  if (data.crm && data.crm.action === "blocked") {
+    // The CRM refused auto-distribution (previous owner invalid) — tell the
+    // entering operator loudly and mark the lead as blocked.
+    const msg = (state.lang === "ka"
+      ? "ლიდი არ განაწილდა! ძველი ლიდის მფლობელი აღარ მუშაობს/როტაციაშია. გადააგზავნეთ ხელით არჩეული სეილ ოპერატორით.\n\n"
+      : "Lead NOT distributed! The previous lead's owner is inactive/out of rotation. Re-submit with a manually selected sale operator.\n\n")
+      + (data.crm.note || "");
+    alert(msg);
+    state.toast = state.lang === "ka" ? "⚠ დაბლოკილი — საჭიროა ხელით მინიჭება" : "⚠ Blocked — manual assignment needed";
+  } else {
+    const who = data.saleOperator ? data.saleOperator.name : (data.operatorName || "");
+    state.toast = tr.saved + who;
+  }
   window.scrollTo({ top: 0 });
   route();
 }
