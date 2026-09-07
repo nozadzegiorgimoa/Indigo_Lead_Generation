@@ -11,9 +11,12 @@
 --    — the gaertianeba trigger/doc logic must not double them), the old F145 is
 --    added as a TypeID=638 comment dated MAX(old history Created)+1s, and the old
 --    lead is archived (Archived=1) and parked on System2 (986).
---  * Keep-owner check spans ALL of the client's open Stage-7 leads (a System-
---    owned duplicate must not hide one owned by a real employee); every open
---    Stage-7 duplicate is archived so exactly one hot lead remains.
+--  * Keep-owner check spans ALL of the client's Stage-6/7 leads: open-lead
+--    owners AND whoever actually worked them (history authors — called or
+--    commented, archived duplicates included), sales groups only (Add3=1);
+--    most recent activity wins. Stage 6 in work => that operator also keeps
+--    new submissions. Every open Stage-7 duplicate is archived so exactly one
+--    hot lead remains (open Stage-6 work items are left untouched).
 --  * Ex-employee/System/pool owners (2026-09-07): the lead goes STRAIGHT to
 --    normal distribution (rules + rotation) — the former 'blocked' hold is gone.
 --  * If the client has a Stage-5 loan (bought a car), F145 gets
@@ -89,18 +92,41 @@ BEGIN
       WHERE CID = @cid AND Stage = 7 AND ISNULL(Archived, 0) = 0
       ORDER BY Created DESC;
 
-  -- Across ALL of the client's open Stage-7 leads (not just the newest — a
-  -- System-owned duplicate must not hide one that a real employee owns): the
-  -- owner to keep, preferring operators currently in rotation.
+  -- Who should keep this client? Candidates (must be an active user in a SALES
+  -- group, never System/pool):
+  --   * owners of the client's OPEN Stage-6/7 leads (a System duplicate must not
+  --     hide a real owner; Stage 6 = already in work — that owner keeps new
+  --     submissions too), and
+  --   * operators who actually WORKED any of the client's Stage-6/7 leads
+  --     (called / commented — history authors, archived duplicates included).
+  -- Priority: most recent history activity first ("who worked it"), then open-
+  -- lead owners, then in-rotation, then newest lead.
   DECLARE @keep_aid int = NULL;
-  IF @old_lid IS NOT NULL
-      SELECT TOP 1 @keep_aid = l.AID
-      FROM crm.dbo.loans l
-      JOIN crm.dbo.users u ON u.ID = l.AID AND u.Deleted IS NULL AND u.IsBlocked = 0 AND u.IsDenyAccess = 0
-      LEFT JOIN CRM_Helper.dbo.Users_for_leaddistribute r ON r.UserID = l.AID
-      WHERE l.CID = @cid AND l.Stage = 7 AND ISNULL(l.Archived, 0) = 0
-        AND l.AID NOT IN (1, 986, 1574)
-      ORDER BY CASE WHEN r.StatusID = 1 THEN 0 ELSE 1 END, l.Created DESC;
+  IF @cid IS NOT NULL
+      SELECT TOP 1 @keep_aid = c.uid
+      FROM (
+          SELECT x.uid, MAX(x.act) AS last_act, MAX(x.own) AS is_owner, MAX(x.crt) AS newest_lead
+          FROM (
+              SELECT l.AID AS uid, CAST(NULL AS int) AS act, 1 AS own, l.Created AS crt
+              FROM crm.dbo.loans l
+              WHERE l.CID = @cid AND l.Stage IN (6, 7) AND ISNULL(l.Archived, 0) = 0
+              UNION ALL
+              SELECT h.AID, h.ID, 0, NULL
+              FROM crm.dbo.history h
+              JOIN crm.dbo.loans hl ON hl.ID = h.LID
+              WHERE hl.CID = @cid AND hl.Stage IN (6, 7)
+          ) x
+          GROUP BY x.uid
+      ) c
+      JOIN crm.dbo.users u ON u.ID = c.uid AND u.Deleted IS NULL AND u.IsBlocked = 0 AND u.IsDenyAccess = 0
+      JOIN crm.dbo.usersgroups g ON g.ID = u.GroupID AND g.Add3 = 1
+      LEFT JOIN CRM_Helper.dbo.Users_for_leaddistribute r ON r.UserID = c.uid
+      WHERE c.uid NOT IN (1, 986, 1574)
+      ORDER BY CASE WHEN c.last_act IS NULL THEN 1 ELSE 0 END,
+               c.last_act DESC,
+               c.is_owner DESC,
+               CASE WHEN r.StatusID = 1 THEN 0 ELSE 1 END,
+               c.newest_lead DESC;
 
   ---------------------------------------------------------------------------
   -- Owner resolution.
