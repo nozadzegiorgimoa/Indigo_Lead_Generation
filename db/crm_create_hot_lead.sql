@@ -11,9 +11,11 @@
 --    — the gaertianeba trigger/doc logic must not double them), the old F145 is
 --    added as a TypeID=638 comment dated MAX(old history Created)+1s, and the old
 --    lead is archived (Archived=1) and parked on System2 (986).
---  * If the old owner is invalid (ex-employee/blocked/out of rotation/System/pool)
---    and there is no manual pick: NOTHING is changed; the proc returns
---    out_action='blocked' + out_note so the portal can flag the lead for a human.
+--  * Keep-owner check spans ALL of the client's open Stage-7 leads (a System-
+--    owned duplicate must not hide one owned by a real employee); every open
+--    Stage-7 duplicate is archived so exactly one hot lead remains.
+--  * Ex-employee/System/pool owners (2026-09-07): the lead goes STRAIGHT to
+--    normal distribution (rules + rotation) — the former 'blocked' hold is gone.
 --  * If the client has a Stage-5 loan (bought a car), F145 gets
 --    'ჩვენთან ნაყიდი ყავს ავტომობილი, გადაამოწმეთ' after the name part.
 -- Fair rotation: within the eligible pool of N active operators, operators missing
@@ -78,13 +80,27 @@ BEGIN
       IF @name <> N'' AND @fio <> @name SET @name_diff = 1;
   END
 
-  -- Latest NON-ARCHIVED Stage-7 lead of this client.
+  -- Latest NON-ARCHIVED Stage-7 lead of this client (primary: supplies the
+  -- carried history/comment; ALL unarchived Stage-7 dupes get archived later).
   DECLARE @old_lid numeric(18,0) = NULL, @old_aid int = NULL, @old_f145 nvarchar(max) = NULL;
   IF @cid IS NOT NULL
       SELECT TOP 1 @old_lid = ID, @old_aid = AID, @old_f145 = F145
       FROM crm.dbo.loans
       WHERE CID = @cid AND Stage = 7 AND ISNULL(Archived, 0) = 0
       ORDER BY Created DESC;
+
+  -- Across ALL of the client's open Stage-7 leads (not just the newest — a
+  -- System-owned duplicate must not hide one that a real employee owns): the
+  -- owner to keep, preferring operators currently in rotation.
+  DECLARE @keep_aid int = NULL;
+  IF @old_lid IS NOT NULL
+      SELECT TOP 1 @keep_aid = l.AID
+      FROM crm.dbo.loans l
+      JOIN crm.dbo.users u ON u.ID = l.AID AND u.Deleted IS NULL AND u.IsBlocked = 0 AND u.IsDenyAccess = 0
+      LEFT JOIN CRM_Helper.dbo.Users_for_leaddistribute r ON r.UserID = l.AID
+      WHERE l.CID = @cid AND l.Stage = 7 AND ISNULL(l.Archived, 0) = 0
+        AND l.AID NOT IN (1, 986, 1574)
+      ORDER BY CASE WHEN r.StatusID = 1 THEN 0 ELSE 1 END, l.Created DESC;
 
   ---------------------------------------------------------------------------
   -- Owner resolution.
@@ -98,26 +114,14 @@ BEGIN
                     AND u.IsBlocked = 0 AND u.IsDenyAccess = 0)
   BEGIN SET @final_aid = @force_operator_id; SET @rule = 'manual'; END
 
-  IF @rule IS NULL AND @old_lid IS NOT NULL
-  BEGIN
-      -- Existing hot lead: keep an ACTIVE in-rotation owner; otherwise block for
-      -- a human decision (no automatic rotation, not even off System).
-      IF EXISTS (SELECT 1 FROM crm.dbo.users u
-                  WHERE u.ID = @old_aid AND u.Deleted IS NULL AND u.IsBlocked = 0 AND u.IsDenyAccess = 0)
-         AND EXISTS (SELECT 1 FROM CRM_Helper.dbo.Users_for_leaddistribute
-                      WHERE UserID = @old_aid AND StatusID = 1)
-      BEGIN SET @final_aid = @old_aid; SET @rule = 'reheat-kept'; END
-      ELSE
-      BEGIN
-          SET @out_cid = @cid; SET @out_lid = NULL; SET @out_action = 'blocked';
-          SET @out_note = N'previous owner: '
-              + ISNULL((SELECT Name FROM crm.dbo.users WHERE ID = @old_aid), N'#' + CAST(ISNULL(@old_aid,0) AS nvarchar(12)))
-              + N' (inactive/out of rotation) — assign manually';
-          RETURN;
-      END
-  END
+  -- Existing hot lead owned by a still-employed operator (on any of the client's
+  -- open Stage-7 leads): keep them. Ex-employee/System/pool owners fall through
+  -- to normal distribution (user rule 2026-09-07: such leads go straight to
+  -- distribution — no 'blocked' hold any more).
+  IF @rule IS NULL AND @keep_aid IS NOT NULL
+  BEGIN SET @final_aid = @keep_aid; SET @rule = 'reheat-kept'; END
 
-  IF @rule IS NULL   -- no existing hot lead: web rules, then fair rotation.
+  IF @rule IS NULL   -- no keepable owner: web rules, then fair rotation.
   BEGIN
     DECLARE @isUkraine bit = CASE WHEN @lang = 'ukrainian' OR @reg = N'უკრაინა'
                                        OR LOWER(@reg) LIKE '%ukrain%' THEN 1 ELSE 0 END;
@@ -209,10 +213,12 @@ BEGIN
   ---------------------------------------------------------------------------
   -- Replace the old hot lead (archive + carry history), or just create one.
   ---------------------------------------------------------------------------
+  -- Archive EVERY open Stage-7 lead of this client (duplicates included), so
+  -- exactly one hot lead remains after the replacement.
   IF @old_lid IS NOT NULL
       UPDATE crm.dbo.loans
          SET Archived = 1, AID = 986, Updated = SYSUTCDATETIME()
-       WHERE ID = @old_lid;
+       WHERE CID = @cid AND Stage = 7 AND ISNULL(Archived, 0) = 0;
 
   INSERT crm.dbo.loans
     (Created, Updated, CID, PID, GID, EID, Currency, CurrencyPen, Region, Unit,
