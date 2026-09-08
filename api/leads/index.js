@@ -118,6 +118,28 @@ module.exports = async (req, res) => {
         )).recordset[0] || null;
       }
 
+      // One client — one operator: a manual pick that differs from the client's
+      // current owner needs explicit confirmation from the person entering it.
+      if (pickedOp && !b.confirmOwnerOverride && (phoneNorm || phoneRaw)) {
+        try {
+          const own = await pool.request()
+            .input('phone', sql.NVarChar(40), phoneNorm || phoneRaw)
+            .output('out_cid', sql.Numeric(18, 0))
+            .output('out_aid', sql.Int)
+            .output('out_name', sql.NVarChar(225))
+            .output('out_group', sql.NVarChar(200))
+            .execute('crm.dbo.get_lead_owner');
+          const ownerId = own.output.out_aid;
+          if (ownerId && ownerId !== pickedOp.crm_user_id) {
+            return send(res, 422, {
+              status: 'owner_conflict',
+              owner: { id: ownerId, name: own.output.out_name, group: own.output.out_group },
+              picked: { id: pickedOp.crm_user_id, name: pickedOp.name },
+            });
+          }
+        } catch (e) { /* owner check is advisory — never blocks lead capture */ }
+      }
+
       // Distribution now happens in the CRM (create_hot_lead -> distribute_hot_leads),
       // so no portal-side sale-operator assignment here.
 

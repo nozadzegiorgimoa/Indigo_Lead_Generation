@@ -679,7 +679,7 @@ function renderHints(r) {
   if (dupBtn && r.duplicate) dupBtn.onclick = () => { state.form = { ...EMPTY }; goto("detail", r.duplicate.id); };
 }
 
-async function submitLead(confirmInvalid) {
+async function submitLead(confirmInvalid, confirmOwner) {
   const tr = t(), mode = state.formMode, f2 = state.form;
   if (mode === "short") { if (!(f2.notes || "").trim()) { alert(tr.notes + " —"); return; } }
   else if (!(f2.name || "").trim() && !(f2.phone || "").trim()) return;
@@ -689,7 +689,7 @@ async function submitLead(confirmInvalid) {
 
   const headers = { "Content-Type": "application/json" };
   if (state.token) headers["Authorization"] = "Bearer " + state.token;
-  const body = Object.assign({}, f2, { formMode: mode, confirmInvalidPhone: !!confirmInvalid });
+  const body = Object.assign({}, f2, { formMode: mode, confirmInvalidPhone: !!confirmInvalid, confirmOwnerOverride: !!confirmOwner });
 
   let res, data;
   try {
@@ -700,7 +700,15 @@ async function submitLead(confirmInvalid) {
   if (res.status === 401) { logout(); return; }
   if (res.status === 422 && data && data.status === "invalid_phone") {
     resetBtn();
-    if (confirm((data.message || tr.phoneInvalidTitle) + "\n\n" + tr.phoneConfirm)) submitLead(true);
+    if (confirm((data.message || tr.phoneInvalidTitle) + "\n\n" + tr.phoneConfirm)) submitLead(true, confirmOwner);
+    return;
+  }
+  if (res.status === 422 && data && data.status === "owner_conflict") {
+    resetBtn();
+    const msg = state.lang === "ka"
+      ? "ეს კლიენტი უკვე " + (data.owner.name || "?") + "-თანაა (" + (data.owner.group || "") + ").\n\nმაინც " + (data.picked.name || "არჩეულ ოპერატორს") + "-ს დავაწერო?\n\n(წესი: ერთი კლიენტი — ერთი ოპერატორი)"
+      : "This client is already with " + (data.owner.name || "?") + " (" + (data.owner.group || "") + ").\n\nAssign to " + (data.picked.name || "the picked operator") + " anyway?\n\n(Rule: one client — one operator)";
+    if (confirm(msg)) submitLead(confirmInvalid, true);
     return;
   }
   if (res.status === 409 && data && data.status === "duplicate") {
