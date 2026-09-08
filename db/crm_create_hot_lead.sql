@@ -69,27 +69,41 @@ BEGIN
   -- Known client? Load FIO / type / bought-flag; the stored type wins over a
   -- defaulted 'Retail'.
   ---------------------------------------------------------------------------
+  -- ALL client cards carrying this number (the same person is sometimes
+  -- duplicated across cards; matching only the newest card left the other
+  -- card's lead alive — the duplicate the operators kept seeing). GE numbers
+  -- are matched by their last 9 digits so 995-prefixed and bare forms meet.
+  DECLARE @suffix nvarchar(20) = CASE WHEN LEN(@digits) >= 9 THEN RIGHT(@digits, 9) ELSE @digits END;
+  DECLARE @cids TABLE (cid numeric(18,0) PRIMARY KEY);
+  INSERT @cids (cid)
+  SELECT DISTINCT CID FROM crm.dbo.phones
+  WHERE RIGHT(REPLACE(REPLACE(REPLACE(REPLACE(PhoneNumber,' ',''),'+',''),'-',''),'(',''),
+              CASE WHEN LEN(@digits) >= 9 THEN 9 ELSE LEN(@digits) END) = @suffix;
+
+  -- Primary card: prefer one with open Stage-6/7 activity, else the newest.
   DECLARE @cid numeric(18,0) = (
-      SELECT TOP 1 CID FROM crm.dbo.phones
-      WHERE REPLACE(REPLACE(REPLACE(REPLACE(PhoneNumber,' ',''),'+',''),'-',''),'(','') = @digits
-      ORDER BY ID DESC);
+      SELECT TOP 1 c.cid FROM @cids c
+      ORDER BY CASE WHEN EXISTS (SELECT 1 FROM crm.dbo.loans l
+                                 WHERE l.CID = c.cid AND l.Stage IN (6,7) AND ISNULL(l.Archived,0)=0)
+                    THEN 0 ELSE 1 END,
+               c.cid DESC);
   DECLARE @fio nvarchar(200) = NULL, @bought bit = 0, @name_diff bit = 0;
   IF @cid IS NOT NULL
   BEGIN
       SELECT @fio = LTRIM(RTRIM(ISNULL(FIO, N''))),
              @ct = CASE WHEN @ct = 'Retail' AND F525 = 'Dealer' THEN 'Dealer' ELSE @ct END
       FROM crm.dbo.clients WHERE ID = @cid;
-      IF EXISTS (SELECT 1 FROM crm.dbo.loans WHERE CID = @cid AND Stage = 5) SET @bought = 1;
+      IF EXISTS (SELECT 1 FROM crm.dbo.loans WHERE CID IN (SELECT cid FROM @cids) AND Stage = 5) SET @bought = 1;
       IF @name <> N'' AND @fio <> @name SET @name_diff = 1;
   END
 
-  -- Latest NON-ARCHIVED Stage-7 lead of this client (primary: supplies the
-  -- carried history/comment; ALL unarchived Stage-7 dupes get archived later).
+  -- Latest NON-ARCHIVED Stage-7 lead across ALL the person's cards (primary:
+  -- supplies the carried history/comment; every open Stage-7 dupe is archived).
   DECLARE @old_lid numeric(18,0) = NULL, @old_aid int = NULL, @old_f145 nvarchar(max) = NULL;
   IF @cid IS NOT NULL
       SELECT TOP 1 @old_lid = ID, @old_aid = AID, @old_f145 = F145
       FROM crm.dbo.loans
-      WHERE CID = @cid AND Stage = 7 AND ISNULL(Archived, 0) = 0
+      WHERE CID IN (SELECT cid FROM @cids) AND Stage = 7 AND ISNULL(Archived, 0) = 0
       ORDER BY Created DESC;
 
   -- Who should keep this client? Candidates (must be an active user in a SALES
@@ -109,12 +123,12 @@ BEGIN
           FROM (
               SELECT l.AID AS uid, CAST(NULL AS int) AS act, 1 AS own, l.Created AS crt
               FROM crm.dbo.loans l
-              WHERE l.CID = @cid AND l.Stage IN (6, 7) AND ISNULL(l.Archived, 0) = 0
+              WHERE l.CID IN (SELECT cid FROM @cids) AND l.Stage IN (6, 7) AND ISNULL(l.Archived, 0) = 0
               UNION ALL
               SELECT h.AID, h.ID, 0, NULL
               FROM crm.dbo.history h
               JOIN crm.dbo.loans hl ON hl.ID = h.LID
-              WHERE hl.CID = @cid AND hl.Stage IN (6, 7)
+              WHERE hl.CID IN (SELECT cid FROM @cids) AND hl.Stage IN (6, 7)
           ) x
           GROUP BY x.uid
       ) c
@@ -239,12 +253,12 @@ BEGIN
   ---------------------------------------------------------------------------
   -- Replace the old hot lead (archive + carry history), or just create one.
   ---------------------------------------------------------------------------
-  -- Archive EVERY open Stage-7 lead of this client (duplicates included), so
-  -- exactly one hot lead remains after the replacement.
+  -- Archive EVERY open Stage-7 lead across ALL the person's cards (duplicates
+  -- included), so exactly one hot lead remains after the replacement.
   IF @old_lid IS NOT NULL
       UPDATE crm.dbo.loans
          SET Archived = 1, AID = 986, Updated = SYSUTCDATETIME()
-       WHERE CID = @cid AND Stage = 7 AND ISNULL(Archived, 0) = 0;
+       WHERE CID IN (SELECT cid FROM @cids) AND Stage = 7 AND ISNULL(Archived, 0) = 0;
 
   INSERT crm.dbo.loans
     (Created, Updated, CID, PID, GID, EID, Currency, CurrencyPen, Region, Unit,
