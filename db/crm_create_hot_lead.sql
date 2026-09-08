@@ -6,11 +6,13 @@
 --    new lead's F145 (კომენტარი).
 --  * If a Stage-7 lead exists and its owner is an ACTIVE in-rotation operator,
 --    the owner is kept ('reheat-kept'); a manual pick still overrides.
---  * The old lead is REPLACED, not updated: a NEW hot lead is created, all of the
---    old lead's history rows are copied to it (TypeID 630 doc-merge rows excluded
---    — the gaertianeba trigger/doc logic must not double them), the old F145 is
---    added as a TypeID=638 comment dated MAX(old history Created)+1s, and the old
---    lead is archived (Archived=1) and parked on System2 (986).
+--  * Reheat = UPDATE IN PLACE (user decision 2026-09-08, replacing the earlier
+--    new-lead+archive scheme whose archived rows looked like duplicates on the
+--    Delta client card): the existing newest open Stage-7 lead is re-hotted and
+--    reassigned; its previous F145 is preserved as a TypeID=638 history comment;
+--    F145 gets the new web text. History stays attached naturally. A NEW lead is
+--    created only when no open Stage-7 exists. Extra open Stage-7 duplicates on
+--    the person's other cards are still archived (one open hot lead per person).
 --  * Keep-owner check spans ALL of the client's Stage-6/7 leads: open-lead
 --    owners AND whoever actually worked them (history authors — called or
 --    commented, archived duplicates included), sales groups only (Add3=1);
@@ -253,49 +255,42 @@ BEGIN
   ---------------------------------------------------------------------------
   -- Replace the old hot lead (archive + carry history), or just create one.
   ---------------------------------------------------------------------------
-  -- Archive EVERY open Stage-7 lead across ALL the person's cards (duplicates
-  -- included), so exactly one hot lead remains after the replacement.
-  IF @old_lid IS NOT NULL
-      UPDATE crm.dbo.loans
-         SET Archived = 1, AID = 986, Updated = SYSUTCDATETIME()
-       WHERE CID IN (SELECT cid FROM @cids) AND Stage = 7 AND ISNULL(Archived, 0) = 0;
-
-  INSERT crm.dbo.loans
-    (Created, Updated, CID, PID, GID, EID, Currency, CurrencyPen, Region, Unit,
-     Stage, State, LoanType, LoanSubType, ENumber, GNumber, Account, AID, F145)
-  VALUES
-    (SYSUTCDATETIME(), SYSUTCDATETIME(), @cid, 2, 0, 0, 2, 2, 3, N'',
-     7, 174, N'', N'', N'', N'', N'', @final_aid, NULLIF(@f145, N''));
-  SET @lid = SCOPE_IDENTITY();
-
   IF @old_lid IS NOT NULL
   BEGIN
-      -- Carry the old lead's history to the new one (multi-row single INSERT;
-      -- TypeID 630 doc-merge rows excluded so document logic is not doubled).
-      INSERT crm.dbo.history
-        (LID, CID, AID, TypeID, Text, Created, Notification, PaymentDate, PaymentValue,
-         isPayment, isNotify, isViewved, isDeclared, isSkipTracing, DeclaredDate, DeclaredValue,
-         Scenario, DR, PhoneID, AddressID, DictID, HasFields, HasEvents, MoodIndicatorId,
-         CollateralId, ActualizationId, HasActualization, EmailID, InsertedFromPab, PAbcommnetid,
-         Creatorid, DOCID, UrlID, Latitude, Longitude, Accuracy, QueueId)
-      SELECT @lid, CID, AID, TypeID, Text, Created, Notification, PaymentDate, PaymentValue,
-             isPayment, isNotify, isViewved, isDeclared, isSkipTracing, DeclaredDate, DeclaredValue,
-             Scenario, DR, PhoneID, AddressID, DictID, HasFields, HasEvents, MoodIndicatorId,
-             CollateralId, ActualizationId, HasActualization, EmailID, InsertedFromPab, PAbcommnetid,
-             Creatorid, DOCID, UrlID, Latitude, Longitude, Accuracy, QueueId
-      FROM crm.dbo.history
-      WHERE LID = @old_lid AND TypeID <> 630;
-
-      -- Old lead's comment survives as a TypeID=638 note right after its history.
-      IF ISNULL(@old_f145, N'') <> N''
+      -- Update in place: same lead object, no duplicates on the client card.
+      -- Preserve the previous comment as a TypeID=638 history note, then re-hot,
+      -- reassign, and write the fresh web text into F145. If the new submission
+      -- carried no text at all, the old F145 simply stays.
+      IF ISNULL(@f145, N'') <> N'' AND ISNULL(@old_f145, N'') <> N''
           INSERT crm.dbo.history
             (LID, CID, AID, TypeID, Text, Created,
              isPayment, isNotify, isViewved, isDeclared, isSkipTracing, DeclaredValue,
              HasFields, HasEvents)
           VALUES
-            (@lid, @cid, 986, 638, @old_f145,
-             DATEADD(SECOND, 1, ISNULL((SELECT MAX(Created) FROM crm.dbo.history WHERE LID = @old_lid), GETDATE())),
-             0, 0, 1, 0, 0, 0, 0, 0);
+            (@old_lid, @cid, 986, 638, @old_f145, GETDATE(), 0, 0, 1, 0, 0, 0, 0, 0);
+
+      UPDATE crm.dbo.loans
+         SET State = 174, AID = @final_aid, Updated = SYSUTCDATETIME(),
+             F145 = CASE WHEN ISNULL(@f145, N'') <> N'' THEN @f145 ELSE F145 END
+       WHERE ID = @old_lid;
+      SET @lid = @old_lid;
+
+      -- Extra open Stage-7 duplicates on the person's OTHER cards: archive, so
+      -- exactly one open hot lead remains per person.
+      UPDATE crm.dbo.loans
+         SET Archived = 1, AID = 986, Updated = SYSUTCDATETIME()
+       WHERE CID IN (SELECT cid FROM @cids) AND Stage = 7
+         AND ISNULL(Archived, 0) = 0 AND ID <> @old_lid;
+  END
+  ELSE
+  BEGIN
+      INSERT crm.dbo.loans
+        (Created, Updated, CID, PID, GID, EID, Currency, CurrencyPen, Region, Unit,
+         Stage, State, LoanType, LoanSubType, ENumber, GNumber, Account, AID, F145)
+      VALUES
+        (SYSUTCDATETIME(), SYSUTCDATETIME(), @cid, 2, 0, 0, 2, 2, 3, N'',
+         7, 174, N'', N'', N'', N'', N'', @final_aid, NULLIF(@f145, N''));
+      SET @lid = SCOPE_IDENTITY();
   END
 
   -- Counters kept for stats/compatibility (no longer drive selection).
