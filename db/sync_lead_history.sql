@@ -28,6 +28,7 @@ BEGIN
         ) x GROUP BY x.uid
       ) c
       JOIN crm.dbo.users cu ON cu.ID = c.uid AND cu.Deleted IS NULL AND cu.IsBlocked = 0 AND cu.IsDenyAccess = 0
+                           AND cu.Name NOT LIKE 'System%' AND cu.[Login] <> cu.Name
       JOIN crm.dbo.usersgroups cg ON cg.ID = cu.GroupID AND cg.Add3 = 1
       WHERE c.uid NOT IN (1, 986, 1574)
       ORDER BY CASE WHEN c.last_act IS NULL THEN 1 ELSE 0 END, c.last_act DESC,
