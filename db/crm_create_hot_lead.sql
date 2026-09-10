@@ -262,13 +262,15 @@ BEGIN
       -- Preserve the previous comment as a TypeID=638 history note, then re-hot,
       -- reassign, and write the fresh web text into F145. If the new submission
       -- carried no text at all, the old F145 simply stays.
+      -- Dated with the OLD lead's creation date (not now), so the carried
+      -- comment sits in its true period of the timeline (user rule 2026-09-10).
       IF ISNULL(@f145, N'') <> N'' AND ISNULL(@old_f145, N'') <> N''
           INSERT crm.dbo.history
             (LID, CID, AID, TypeID, Text, Created,
              isPayment, isNotify, isViewved, isDeclared, isSkipTracing, DeclaredValue,
              HasFields, HasEvents)
-          VALUES
-            (@old_lid, @cid, 986, 638, @old_f145, GETDATE(), 0, 0, 1, 0, 0, 0, 0, 0);
+          SELECT @old_lid, @cid, 986, 638, @old_f145, lo.Created, 0, 0, 1, 0, 0, 0, 0, 0
+          FROM crm.dbo.loans lo WHERE lo.ID = @old_lid;
 
       UPDATE crm.dbo.loans
          SET State = 174, AID = @final_aid, Updated = SYSUTCDATETIME(),
