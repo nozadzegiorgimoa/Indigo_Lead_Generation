@@ -64,6 +64,45 @@ BEGIN
   END
 
   ------------------------------------------------------------------
+  -- (0b) SAFETY NET: portal leads whose CRM push never landed (web function
+  -- can be killed mid-call, e.g. by timeouts) get pushed from the server side.
+  -- Only rows older than 5 minutes (so we never race a live web request).
+  ------------------------------------------------------------------
+  DECLARE @pid int, @ph nvarchar(40), @nm nvarchar(200), @lg nvarchar(20),
+          @city nvarchar(120), @ct2 nvarchar(20), @src nvarchar(60), @cm nvarchar(max),
+          @so int, @ocid numeric(18,0), @olid numeric(18,0), @oact nvarchar(40), @onote nvarchar(300);
+  DECLARE push_cur CURSOR LOCAL FAST_FORWARD FOR
+    SELECT id, COALESCE(phone, phone_processed, phone_normalized),
+           COALESCE(NULLIF(name,''), NULLIF(name_processed,''), N''),
+           ISNULL(NULLIF(language,''),'georgian'),
+           COALESCE(NULLIF(city,''), NULLIF(city_processed,'')),
+           CASE WHEN COALESCE(NULLIF(customer_type,''), NULLIF(customer_type_processed,'')) = 'dealer' THEN 'Dealer' ELSE 'Retail' END,
+           COALESCE(NULLIF(source,''), NULLIF(source_processed,'')),
+           additional_comment, sale_operator_id
+    FROM dbo.leads
+    WHERE crm_lid IS NULL AND status <> 'blocked' AND id <> 1042
+      AND created_at < DATEADD(MINUTE, -5, SYSUTCDATETIME())
+      AND created_at > DATEADD(DAY, -7, SYSUTCDATETIME());
+  OPEN push_cur; FETCH NEXT FROM push_cur INTO @pid, @ph, @nm, @lg, @city, @ct2, @src, @cm, @so;
+  WHILE @@FETCH_STATUS = 0
+  BEGIN
+    BEGIN TRY
+      EXEC crm.dbo.create_hot_lead @phone=@ph, @name=@nm, @language=@lg, @region=@city,
+           @clienttype=@ct2, @source=@src, @comment=@cm, @force_operator_id=@so,
+           @out_cid=@ocid OUTPUT, @out_lid=@olid OUTPUT, @out_action=@oact OUTPUT, @out_note=@onote OUTPUT;
+      UPDATE dbo.leads SET crm_cid=@ocid, crm_lid=@olid, crm_action=@oact WHERE id=@pid;
+      INSERT dbo.lead_history (lead_id, text)
+      VALUES (@pid, N'Pushed to CRM (server retry) · ' + ISNULL(@oact,'') + N' · loan ' + CAST(@olid AS nvarchar(20)));
+    END TRY
+    BEGIN CATCH
+      INSERT dbo.lead_history (lead_id, text)
+      VALUES (@pid, N'Server retry push failed: ' + LEFT(ERROR_MESSAGE(), 300));
+    END CATCH
+    FETCH NEXT FROM push_cur INTO @pid, @ph, @nm, @lg, @city, @ct2, @src, @cm, @so;
+  END
+  CLOSE push_cur; DEALLOCATE push_cur;
+
+  ------------------------------------------------------------------
   -- (1) poll-log owner changes for portal leads (unchanged).
   ------------------------------------------------------------------
   INSERT INTO dbo.lead_distribution_history
