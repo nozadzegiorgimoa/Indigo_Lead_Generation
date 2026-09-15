@@ -10,12 +10,21 @@ module.exports = async (req, res) => {
   if (!user) return;
 
   const isManager = user.role === 'manager';
+  const groupScope = !isManager && user.managedGroup ? Number(user.managedGroup) : null;
   try {
     const pool = await getPool();
-    const scope = isManager ? '' : ' WHERE operator_id = @uid';
+    // Group managers see only leads owned by their sales group; plain operators
+    // only their own portal-assigned leads; managers see everything.
+    const scope = isManager ? ''
+      : groupScope
+        ? ' WHERE crm_lid IN (SELECT cl.ID FROM crm.dbo.loans cl JOIN dbo.sale_operators so ON so.crm_user_id = cl.AID WHERE so.group_id = @mg)'
+        : ' WHERE operator_id = @uid';
     const mk = () => {
       const r = pool.request();
-      if (!isManager) r.input('uid', sql.Int, user.uid);
+      if (!isManager) {
+        if (groupScope) r.input('mg', sql.Int, groupScope);
+        else r.input('uid', sql.Int, user.uid);
+      }
       return r;
     };
 
@@ -41,14 +50,16 @@ module.exports = async (req, res) => {
     // Sale-operator load (managers only) — portal leads per CRM operator, from the
     // CRM assignment (crm_lid -> loans.AID -> mirrored operator), excluding the pool.
     let operatorLoad = [];
-    if (isManager) {
-      const loadRes = await pool.request().query(
+    if (isManager || groupScope) {
+      const lr = pool.request();
+      if (groupScope) lr.input('mg', sql.Int, groupScope);
+      const loadRes = await lr.query(
         `SELECT so.name, so.group_name AS branch,
                 SUM(CASE WHEN l.status NOT IN ('won','lost') THEN 1 ELSE 0 END) AS open_count
          FROM dbo.leads l
          JOIN crm.dbo.loans cl ON cl.ID = l.crm_lid
          JOIN dbo.sale_operators so ON so.crm_user_id = cl.AID
-         WHERE cl.AID <> 1574
+         WHERE cl.AID <> 1574${groupScope ? ' AND so.group_id = @mg' : ''}
          GROUP BY so.name, so.group_name
          HAVING SUM(CASE WHEN l.status NOT IN ('won','lost') THEN 1 ELSE 0 END) > 0
          ORDER BY open_count DESC`

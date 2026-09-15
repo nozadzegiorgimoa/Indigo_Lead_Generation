@@ -2,7 +2,7 @@
 // Grouped sale-operator roster from the portal's own mirror (dbo.sale_operators),
 // refreshed from crm by sync_sale_operators. Shows ALL active sale operators
 // (every group) so any can be picked for a manual/force assignment.
-const { getPool } = require('./_db');
+const { sql, getPool } = require('./_db');
 const { requireUser, send } = require('./_auth');
 
 module.exports = async (req, res) => {
@@ -12,10 +12,18 @@ module.exports = async (req, res) => {
 
   try {
     const pool = await getPool();
-    const result = await pool.request().query(
+    const rq = pool.request();
+    // Group managers see only their own group's operators — no information
+    // about other groups leaks through the picker.
+    let where = 'active = 1';
+    if (user.role !== 'manager' && user.managedGroup) {
+      where += ' AND group_id = @mg';
+      rq.input('mg', sql.Int, Number(user.managedGroup));
+    }
+    const result = await rq.query(
       `SELECT group_id, group_name, crm_user_id, name, in_rotation
          FROM dbo.sale_operators
-        WHERE active = 1
+        WHERE ${where}
         ORDER BY group_name, name`
     );
     const byGroup = new Map();

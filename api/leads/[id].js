@@ -25,8 +25,19 @@ module.exports = async (req, res) => {
   );
   const lead = leadRes.recordset[0];
   if (!lead) return send(res, 404, { error: 'Lead not found.' });
-  if (user.role !== 'manager' && lead.operator_id !== user.uid) {
-    return send(res, 403, { error: 'This lead is assigned to another operator.' });
+  if (user.role !== 'manager') {
+    if (user.managedGroup) {
+      // Group manager: only leads currently owned by their sales group.
+      const ok = lead.crm_lid && (await pool.request()
+        .input('lid', sql.Numeric(18, 0), lead.crm_lid)
+        .input('mg', sql.Int, user.managedGroup)
+        .query(`SELECT 1 AS ok FROM crm.dbo.loans cl
+                JOIN dbo.sale_operators so ON so.crm_user_id = cl.AID
+                WHERE cl.ID = @lid AND so.group_id = @mg`)).recordset[0];
+      if (!ok) return send(res, 403, { error: 'This lead belongs to another group.' });
+    } else if (lead.operator_id !== user.uid) {
+      return send(res, 403, { error: 'This lead is assigned to another operator.' });
+    }
   }
 
   // ---------------- READ ----------------

@@ -24,7 +24,14 @@ module.exports = async (req, res) => {
       const clauses = [];
       const reqd = pool.request();
 
-      if (user.role !== 'manager') { clauses.push('l.operator_id = @uid'); reqd.input('uid', sql.Int, user.uid); }
+      if (user.role !== 'manager') {
+        if (user.managedGroup) {
+          // Group manager: ONLY leads currently owned by their sales group.
+          clauses.push('so.group_id = @mg'); reqd.input('mg', sql.Int, user.managedGroup);
+        } else {
+          clauses.push('l.operator_id = @uid'); reqd.input('uid', sql.Int, user.uid);
+        }
+      }
       if (status && STATUS_IDS.includes(status)) { clauses.push('l.status = @status'); reqd.input('status', sql.NVarChar(20), status); }
       if (q) {
         clauses.push('(LOWER(ISNULL(l.name, ISNULL(l.name_processed,\'\'))) LIKE @q OR LOWER(ISNULL(l.phone, ISNULL(l.phone_processed,\'\'))) LIKE @q OR LOWER(ISNULL(l.car,\'\')) LIKE @q)');
