@@ -46,6 +46,14 @@ BEGIN
   SET NOCOUNT ON;
 
   DECLARE @lang nvarchar(20) = LOWER(@language);
+  -- CIS-country numbers arriving with the DEFAULT 'georgian' language are
+  -- almost always Russian-speaking clients whose language dropdown was left
+  -- untouched (repeated manual corrections on 2026-09-15) -> route as Russian.
+  DECLARE @d0 nvarchar(40) = REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(@phone,''),' ',''),'+',''),'-',''),'(','');
+  IF @lang = 'georgian' AND @d0 NOT LIKE '995%' AND (
+       @d0 LIKE '7%' AND LEN(@d0) = 11 OR @d0 LIKE '374%' OR @d0 LIKE '375%' OR @d0 LIKE '380%'
+       OR @d0 LIKE '994%' OR @d0 LIKE '998%' OR @d0 LIKE '996%' OR @d0 LIKE '992%' OR @d0 LIKE '993%')
+    SET @lang = 'russian';
   DECLARE @f14 nvarchar(60) = CASE @lang
       WHEN 'georgian'  THEN N'ქართული'  WHEN 'russian'   THEN N'რუსული'
       WHEN 'ukrainian' THEN N'რუსული'    WHEN 'english'   THEN N'ინგლისური'
