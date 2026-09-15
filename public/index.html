@@ -420,7 +420,9 @@ function renderShell(bodyHtml) {
     { id:"list", label:(u && u.role==="operator") ? tr.myLeads : tr.leads }
   ];
   if (u && u.role === "manager") navItems.push({ id:"users", label:tr.team });
-  const titles = { dashboard:tr.dashboard, new:tr.newLead, list:navItems[2].label, users:tr.team, password:tr.changePassword };
+  const rotLabel = state.lang === "ka" ? "როტაცია" : "Rotation";
+  if (u && (u.role === "manager" || u.managedGroup)) navItems.push({ id:"rotation", label:rotLabel });
+  const titles = { dashboard:tr.dashboard, new:tr.newLead, list:navItems[2].label, users:tr.team, password:tr.changePassword, rotation:rotLabel };
   el("root").innerHTML =
     '<div class="app">' +
       '<aside class="sidebar">' +
@@ -469,6 +471,48 @@ function loading() { renderShell('<div class="spinner"></div>'); }
 function showError(msg) { renderShell('<div class="banner-error">'+esc(msg)+'</div>'); }
 
 /* ══════════════ ROUTES ══════════════ */
+/* ══════════════ ROTATION (group managers) ══════════════ */
+async function viewRotation() {
+  const ka = state.lang === "ka";
+  const d = await api("/api/rotation");
+  const groups = {};
+  d.operators.forEach(o => { (groups[o.group || "—"] = groups[o.group || "—"] || []).push(o); });
+  const onTxt = ka ? "როტაციაშია" : "In rotation";
+  const offTxt = ka ? "გამორთულია" : "Off";
+  const noCfg = ka ? "კონფიგი არ აქვს" : "No config";
+  let html = '<div style="max-width:760px">' +
+    '<p style="color:#666;font-size:13px;margin:0 0 16px">' +
+    (ka ? "ჩართვა/გამორთვა მოქმედებს მხოლოდ ახალი ლიდების როტაციაზე. გამორთული ოპერატორის არსებული კლიენტები მასვე რჩება."
+        : "Toggles affect only NEW lead rotation. A disabled operator keeps their existing clients.") + '</p>';
+  Object.keys(groups).sort().forEach(g => {
+    html += '<div style="background:#fff;border:1px solid #E7E5F3;border-radius:14px;padding:16px 18px;margin-bottom:14px">' +
+      '<div style="font-weight:700;font-size:14px;margin-bottom:10px">' + esc(g) + '</div>';
+    groups[g].forEach(o => {
+      const badge = !o.hasConfig
+        ? '<span style="font-size:12px;color:#999">' + noCfg + '</span>'
+        : '<button type="button" data-rot="' + o.id + '" data-en="' + (o.inRotation ? 0 : 1) + '" ' +
+          'style="border:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;' +
+          (o.inRotation ? 'background:#E4F5EC;color:#146A48' : 'background:#FDECEC;color:#A83A3A') + '">' +
+          (o.inRotation ? onTxt : offTxt) + '</button>';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #F2F1FA">' +
+        '<div>' + esc(o.name) + '</div>' + badge + '</div>';
+    });
+    html += '</div>';
+  });
+  html += '</div>';
+  renderShell(html);
+  document.querySelectorAll("[data-rot]").forEach(b => b.onclick = async () => {
+    const id = Number(b.dataset.rot), enable = b.dataset.en === "1";
+    const q = ka ? (enable ? "ჩავრთო როტაციაში?" : "გამოვრთო როტაციიდან? (არსებული კლიენტები მასვე დარჩება)")
+                 : (enable ? "Enable rotation for this operator?" : "Disable rotation? (Existing clients stay with them)");
+    if (!confirm(q)) return;
+    b.disabled = true;
+    try { await api("/api/rotation", { method: "POST", body: { crmUserId: id, enable } }); }
+    catch (e) { alert(e.message); }
+    viewRotation();
+  });
+}
+
 async function route() {
   if (!state.token) return renderLogin();
   // Force a first-login password change before anything else.
@@ -477,6 +521,7 @@ async function route() {
   try {
     if (state.view === "password") viewPassword();
     else if (state.view === "users") await viewUsers();
+    else if (state.view === "rotation") await viewRotation();
     else if (state.view === "dashboard") await viewDashboard();
     else if (state.view === "new") await viewNew();
     else if (state.view === "list") await viewList();
@@ -1015,7 +1060,7 @@ async function boot() {
   loading();
   try {
     const me = await api("/api/me");
-    state.user = { id:me.id, name:me.name, role:me.role, branch:me.branch, mustChange:!!me.mustChange };
+    state.user = { id:me.id, name:me.name, role:me.role, branch:me.branch, mustChange:!!me.mustChange, managedGroup:me.managedGroup||null };
     if (state.user.mustChange) state.view = "password";
     await route();
   } catch (err) {

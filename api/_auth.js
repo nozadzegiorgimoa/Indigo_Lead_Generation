@@ -11,7 +11,8 @@ function getSecret() {
 
 function signToken(user) {
   return jwt.sign(
-    { uid: user.id, role: user.role, name: user.name, branch: user.branch || null, mustChange: !!user.must_change },
+    { uid: user.id, role: user.role, name: user.name, branch: user.branch || null,
+      mustChange: !!user.must_change, managedGroup: user.managed_group_id || null },
     getSecret(),
     { expiresIn: TOKEN_TTL }
   );

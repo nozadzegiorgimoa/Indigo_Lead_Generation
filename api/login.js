@@ -12,7 +12,7 @@ module.exports = async (req, res) => {
     const pool = await getPool();
     const result = await pool.request()
       .input('email', sql.NVarChar(190), String(email).trim().toLowerCase())
-      .query('SELECT TOP 1 id, name, email, password_hash, role, branch, active, must_change FROM dbo.users WHERE LOWER(email) = @email');
+      .query('SELECT TOP 1 id, name, email, password_hash, role, branch, active, must_change, managed_group_id FROM dbo.users WHERE LOWER(email) = @email');
 
     const user = result.recordset[0];
     // Same response whether the email or the password is wrong.
@@ -22,7 +22,8 @@ module.exports = async (req, res) => {
 
     return send(res, 200, {
       token: signToken(user),
-      user: { id: user.id, name: user.name, email: user.email, role: user.role, branch: user.branch, mustChange: !!user.must_change },
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, branch: user.branch,
+              mustChange: !!user.must_change, managedGroup: user.managed_group_id || null },
     });
   } catch (err) {
     return send(res, 500, { error: 'Login failed: ' + err.message });
