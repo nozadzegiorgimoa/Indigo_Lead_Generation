@@ -66,6 +66,25 @@ BEGIN
   END
 
   ------------------------------------------------------------------
+  -- (0c) Own the pool: the old Delta distributor is now guarded off, so any
+  -- keeper-less lead still sitting in the pool (AID=1574) is distributed by OUR
+  -- rules via reassign_hot_lead. Runs during the same 3-min cadence.
+  ------------------------------------------------------------------
+  DECLARE @plid numeric(18,0), @pa int, @pn nvarchar(225), @pg nvarchar(200);
+  DECLARE pool_cur CURSOR LOCAL FAST_FORWARD FOR
+    SELECT ID FROM crm.dbo.loans WHERE AID = 1574 AND Stage = 7 AND ISNULL(Archived,0) = 0;
+  OPEN pool_cur; FETCH NEXT FROM pool_cur INTO @plid;
+  WHILE @@FETCH_STATUS = 0
+  BEGIN
+    BEGIN TRY
+      EXEC crm.dbo.reassign_hot_lead @lid=@plid, @actor=NULL,
+           @out_aid=@pa OUTPUT, @out_name=@pn OUTPUT, @out_group=@pg OUTPUT;
+    END TRY BEGIN CATCH END CATCH
+    FETCH NEXT FROM pool_cur INTO @plid;
+  END
+  CLOSE pool_cur; DEALLOCATE pool_cur;
+
+  ------------------------------------------------------------------
   -- (0b) SAFETY NET: portal leads whose CRM push never landed (web function
   -- can be killed mid-call, e.g. by timeouts) get pushed from the server side.
   -- Only rows older than 5 minutes (so we never race a live web request).
