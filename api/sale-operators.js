@@ -15,8 +15,10 @@ module.exports = async (req, res) => {
     const rq = pool.request();
     // Group managers see only their own group's operators — no information
     // about other groups leaks through the picker.
-    // temp-disabled operators are treated like leavers — never offered for assignment.
-    let where = 'active = 1 AND ISNULL(temp_disabled, 0) = 0';
+    // Only active, in-rotation operators are offered for assignment (both the new-
+    // lead picker and the reassign picker). temp-disabled are leavers; off-rotation
+    // operators are intentionally not selectable.
+    let where = 'active = 1 AND ISNULL(temp_disabled, 0) = 0 AND ISNULL(in_rotation, 0) = 1';
     if (user.role !== 'manager' && user.managedGroup) {
       where += ' AND group_id = @mg';
       rq.input('mg', sql.Int, Number(user.managedGroup));
