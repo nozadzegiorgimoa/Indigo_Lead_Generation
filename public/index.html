@@ -288,7 +288,7 @@ const STATUSES = [
   { id:"blocked", en:"Blocked", ka:"დაბლოკილი", bg:"#FBE9E9", fg:"#8A1F1F", bar:"#B32424" }
 ];
 const BRANCHES = ["Tbilisi · Avlabari","Gori","Kutaisi","Batumi","Marneuli","USA · Keyport NJ"];
-const SOURCES = ["Website form","Facebook","Instagram","Meta Lead Form","WhatsApp","Viber","TikTok","Phone call","Walk-in","Referral"];
+const SOURCES = ["Website form","Facebook","Instagram","Meta Lead Form","WhatsApp","Viber","TikTok","Phone call","Walk-in","Referral","Hot line","Cross-selling"];
 const CHANNELS = ["Phone","WhatsApp","Viber","Email"];
 const LANGS = [
   { id:"georgian",  en:"Georgian",  ka:"ქართული" },
@@ -830,10 +830,11 @@ async function viewDetail(id) {
   const d = await api("/api/leads/" + id);
   const lead = d.lead;
   const isManager = state.user.role === "manager";
+  const canReassign = isManager || !!state.user.managedGroup;
   if (isManager && !state.operators.length) {
     try { state.operators = (await api("/api/operators")).operators; } catch (e) { /* non-fatal */ }
   }
-  if (isManager && !state.saleGroups.length) {
+  if (canReassign && !state.saleGroups.length) {
     try { state.saleGroups = (await api("/api/sale-operators")).groups || []; } catch (e) { /* non-fatal */ }
   }
   const langLabel = (LANGS.find(l => l.id === lead.language) || {})[state.lang] || lead.language || "—";
@@ -858,7 +859,26 @@ async function viewDetail(id) {
     '<div class="assignee"><div class="assignee-avatar">'+esc(initials((crm && crm.operator) || "?"))+'</div>' +
       '<div><div class="assignee-name">'+esc((crm && crm.operator) || tr.unassigned)+'</div>' +
       '<div class="assignee-branch">'+esc((crm && crm.group) || "—")+'</div></div></div>' +
-    '<div class="assign-label" style="margin-top:10px">'+esc(crmStatus)+'</div></section>';
+    '<div class="assign-label" style="margin-top:10px">'+esc(crmStatus)+'</div>' +
+    (canReassign && crm && crm.operator ? '<button type="button" id="reassign-open" class="status-btn" style="margin-top:12px;width:100%">'+
+      esc(state.lang==="ka"?"↻ სხვას გადაწერა":"↻ Reassign")+'</button>' : '') +
+    '</section>';
+
+  // Reassign panel (managers / group managers). Fields can be redefined like a
+  // new lead; empty target = fair rotation (in the manager's group, or by rule).
+  const opts = (arr, sel) => arr.map(o => '<option value="'+o.id+'"'+(o.id===sel?' selected':'')+'>'+esc(o[state.lang]||o.en||o.name)+'</option>').join("");
+  const opGroups = (state.saleGroups||[]).map(g =>
+    '<optgroup label="'+esc(g.name)+'">'+ g.operators.map(o => '<option value="'+o.id+'">'+esc(o.name)+'</option>').join("") +'</optgroup>').join("");
+  const reassignCard = !canReassign ? '' :
+    '<section class="card" id="reassign-panel" hidden><div class="side-title">'+esc(state.lang==="ka"?"გადაწერა":"Reassign")+'</div>'+
+    '<label style="display:block;margin-bottom:8px"><span class="field-label">'+esc(tr.customerType)+'</span>'+
+      '<select class="field-input" id="ra-type"><option value="">'+esc(state.lang==="ka"?"— უცვლელი —":"— keep —")+'</option>'+opts(CUSTOMER_TYPES,null)+'</select></label>'+
+    '<label style="display:block;margin-bottom:8px"><span class="field-label">'+esc(tr.speakingLanguage)+'</span>'+
+      '<select class="field-input" id="ra-lang"><option value="">'+esc(state.lang==="ka"?"— უცვლელი —":"— keep —")+'</option>'+opts(LANGS,null)+'</select></label>'+
+    '<label style="display:block;margin-bottom:10px"><span class="field-label">'+esc(state.lang==="ka"?"მენეჯერი":"Operator")+'</span>'+
+      '<select class="field-input" id="ra-op"><option value="">'+esc(state.lang==="ka"?"⟳ ავტო-როტაცია":"⟳ Auto-rotate")+'</option>'+opGroups+'</select></label>'+
+    '<div style="display:flex;gap:8px"><button type="button" class="btn-primary" id="ra-submit" style="flex:1">'+esc(state.lang==="ka"?"გადაწერა":"Reassign")+'</button>'+
+      '<button type="button" class="status-btn" id="ra-cancel">'+esc(tr.cancel||"Cancel")+'</button></div></section>';
 
   // Assignment timeline (procedure-made assignments, local log).
   const dh = d.distHistory || [];
@@ -887,7 +907,7 @@ async function viewDetail(id) {
           const style = active ? ' style="background:'+s.bg+';color:'+s.fg+';border-color:'+s.bg+'"' : '';
           return '<button type="button" class="status-btn" data-status="'+s.id+'"'+style+'>'+esc(s[state.lang]||s.en)+'</button>';
         }).join("") + '</div></section>' +
-      crmCard + dhCard +
+      crmCard + reassignCard + dhCard +
       '<section class="card"><div class="side-title">'+esc(tr.history)+'</div><div class="history">' +
         d.history.map(h => '<div class="history-item"><div class="history-dot"></div><div>' +
           '<div class="history-text">'+esc(h.text)+'</div><div class="history-at">'+fmtDateTime(h.created_at)+'</div></div></div>').join("") +
@@ -902,6 +922,23 @@ async function viewDetail(id) {
     try { await api("/api/leads/"+id, { method:"PATCH", body:{ status:b.dataset.status } }); route(); }
     catch (err) { alert(err.message); }
   });
+  const raOpen = el("reassign-open"), raPanel = el("reassign-panel");
+  if (raOpen && raPanel) {
+    raOpen.onclick = () => { raPanel.hidden = false; raOpen.hidden = true; };
+    el("ra-cancel").onclick = () => { raPanel.hidden = true; raOpen.hidden = false; };
+    el("ra-submit").onclick = async () => {
+      const body = { leadId: id,
+        customerType: el("ra-type").value || undefined,
+        language: el("ra-lang").value || undefined,
+        saleOperatorId: el("ra-op").value ? Number(el("ra-op").value) : undefined };
+      el("ra-submit").disabled = true;
+      try {
+        const r = await api("/api/reassign", { method:"POST", body });
+        state.toast = (state.lang==="ka"?"გადაწერილია → ":"Reassigned → ") + (r.owner ? r.owner.name : "");
+        route();
+      } catch (e) { alert(e.message); el("ra-submit").disabled = false; }
+    };
+  }
 }
 
 /* ══════════════ CHANGE PASSWORD ══════════════ */

@@ -7,6 +7,7 @@
 const CANONICAL_SOURCES = [
   'Website form', 'Facebook', 'Instagram', 'Meta Lead Form', 'WhatsApp',
   'Viber', 'TikTok', 'Phone call', 'Walk-in', 'Referral',
+  'Hot line', 'Cross-selling',
 ];
 
 // Order matters: more specific first (Meta Lead Form before bare "meta").
@@ -20,6 +21,10 @@ const SOURCE_RULES = [
   { canonical: 'Phone call',     re: /(?<![\p{L}])(phone\s*call|call)(?![\p{L}])|(?<![\p{L}])(ზარი|დარეკ)/iu },
   { canonical: 'Walk-in',        re: /(?<![\p{L}])(walk\s*-?\s*in)(?![\p{L}])|(?<![\p{L}])ადგილზე/iu },
   { canonical: 'Referral',       re: /(?<![\p{L}])(referral)(?![\p{L}])|(?<![\p{L}])(რეკომენდაცი|მეგობ)/iu },
+  // Hot line: Georgian "ცხელი ხაზი" (requires ხაზ so it never matches "ცხელი ლიდი").
+  { canonical: 'Hot line',       re: /(?<![\p{L}])(hot\s*line)(?![\p{L}])|(?<![\p{L}])ცხელ\s*[\p{L}]*\s*ხაზ/iu },
+  // Cross-selling: "ქროსსელინგი"/"ქროსსეილინგი" (both spellings) or english.
+  { canonical: 'Cross-selling',  re: /(?<![\p{L}])(cross\s*-?\s*sell)(?![\p{L}])|(?<![\p{L}])ქროსს?ე?[ლი]/iu },
   { canonical: 'Website form',   re: /(?<![\p{L}])(website|web\s*form)(?![\p{L}])|(?<![\p{L}])საიტ/iu },
 ];
 
@@ -49,7 +54,7 @@ function stripSourceMentions(text) {
   let out = text;
   for (const rule of SOURCE_RULES) {
     // Extend any Georgian prefix in the rule to swallow trailing letters.
-    const src = rule.re.source.replace(/(ფეისბუ|ფბ|ინსტა|ვოთსაფ|ვოცაფ|ვაცაპ|ვაცაფ|ვაიბერ|ტი\[კქ\]ტო\[კქ\]|ზარი|დარეკ|ადგილზე|რეკომენდაცი|მეგობ|საიტ|ლიდ\\s\*ფორმა|ლიდფორმა|ფორმა)/g, '$1\\p{L}*');
+    const src = rule.re.source.replace(/(ფეისბუ|ფბ|ინსტა|ვოთსაფ|ვოცაფ|ვაცაპ|ვაცაფ|ვაიბერ|ტი\[კქ\]ტო\[კქ\]|ზარი|დარეკ|ადგილზე|რეკომენდაცი|მეგობ|საიტ|ხაზ|ქროსს\?ე\?\[ლი\]|ლიდ\\s\*ფორმა|ლიდფორმა|ფორმა)/g, '$1\\p{L}*');
     out = out.replace(new RegExp(src, 'giu'), ' ');
   }
   return out;
