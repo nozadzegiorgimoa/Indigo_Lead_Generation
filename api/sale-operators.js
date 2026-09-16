@@ -15,7 +15,8 @@ module.exports = async (req, res) => {
     const rq = pool.request();
     // Group managers see only their own group's operators — no information
     // about other groups leaks through the picker.
-    let where = 'active = 1';
+    // temp-disabled operators are treated like leavers — never offered for assignment.
+    let where = 'active = 1 AND ISNULL(temp_disabled, 0) = 0';
     if (user.role !== 'manager' && user.managedGroup) {
       where += ' AND group_id = @mg';
       rq.input('mg', sql.Int, Number(user.managedGroup));

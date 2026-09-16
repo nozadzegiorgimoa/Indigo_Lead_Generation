@@ -911,8 +911,9 @@ async function viewDetail(id) {
   // Reassign panel (managers / group managers). Fields can be redefined like a
   // new lead; empty target = fair rotation (in the manager's group, or by rule).
   const opts = (arr, sel) => arr.map(o => '<option value="'+o.id+'"'+(o.id===sel?' selected':'')+'>'+esc(o[state.lang]||o.en||o.name)+'</option>').join("");
+  const offTag = state.lang==="ka" ? " (როტაციის გარეშე)" : " (not in rotation)";
   const opGroups = (state.saleGroups||[]).map(g =>
-    '<optgroup label="'+esc(g.name)+'">'+ g.operators.map(o => '<option value="'+o.id+'">'+esc(o.name)+'</option>').join("") +'</optgroup>').join("");
+    '<optgroup label="'+esc(g.name)+'">'+ g.operators.map(o => '<option value="'+o.id+'">'+esc(o.name)+(o.inRotation?"":offTag)+'</option>').join("") +'</optgroup>').join("");
   const reassignCard = !canReassign ? '' :
     '<section class="card" id="reassign-panel" hidden><div class="side-title">'+esc(state.lang==="ka"?"გადაწერა":"Reassign")+'</div>'+
     '<label style="display:block;margin-bottom:8px"><span class="field-label">'+esc(tr.customerType)+'</span>'+
