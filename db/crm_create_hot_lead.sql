@@ -33,7 +33,7 @@ CREATE OR ALTER PROCEDURE dbo.create_hot_lead
   @name              nvarchar(200),
   @language          nvarchar(20)  = 'georgian',
   @region            nvarchar(120) = NULL,
-  @clienttype        nvarchar(20)  = 'Retail',
+  @clienttype        nvarchar(20)  = NULL,   -- NULL = not specified by the lead
   @source            nvarchar(60)  = NULL,
   @comment           nvarchar(max) = NULL,
   @force_operator_id int           = NULL,
@@ -64,7 +64,10 @@ BEGIN
       WHEN 'batumi'   THEN N'ბათუმი'   WHEN 'gori'     THEN N'გორი'
       WHEN 'rustavi'  THEN N'რუსთავი'  WHEN 'marneuli' THEN N'მარნეული'
       WHEN 'zugdidi'  THEN N'ზუგდიდი'  ELSE @reg END;
-  DECLARE @ct  nvarchar(20)  = CASE WHEN @clienttype = 'Dealer' THEN 'Dealer' ELSE 'Retail' END;
+  -- NULL = the lead did not say dealer/retail; the default is decided later:
+  -- an existing client's stored type first, else by language (user rule
+  -- 2026-09-16: unspecified Georgian -> Retail, unspecified Russian -> Dealer).
+  DECLARE @ct  nvarchar(20)  = CASE WHEN @clienttype IN ('Dealer','Retail') THEN @clienttype ELSE NULL END;
   SET @source = ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(@source,N''))),N''), N'Website form');
   SET @name = LTRIM(RTRIM(ISNULL(@name, N'')));
   DECLARE @digits nvarchar(40) =
@@ -101,11 +104,16 @@ BEGIN
   IF @cid IS NOT NULL
   BEGIN
       SELECT @fio = LTRIM(RTRIM(ISNULL(FIO, N''))),
-             @ct = CASE WHEN @ct = 'Retail' AND F525 = 'Dealer' THEN 'Dealer' ELSE @ct END
+             @ct = CASE WHEN @ct IS NULL AND F525 IN ('Dealer','Retail') THEN F525 ELSE @ct END
       FROM crm.dbo.clients WHERE ID = @cid;
       IF EXISTS (SELECT 1 FROM crm.dbo.loans WHERE CID IN (SELECT cid FROM @cids) AND Stage = 5) SET @bought = 1;
       IF @name <> N'' AND @fio <> @name SET @name_diff = 1;
   END
+
+  -- Type still unspecified anywhere -> the language decides the default:
+  -- Georgian -> Retail, Russian/Ukrainian -> Dealer (=> Markov group flow).
+  IF @ct IS NULL
+      SET @ct = CASE WHEN @lang IN ('russian', 'ukrainian') THEN 'Dealer' ELSE 'Retail' END;
 
   -- Latest NON-ARCHIVED Stage-7 lead across ALL the person's cards (primary:
   -- supplies the carried history/comment; every open Stage-7 dupe is archived).

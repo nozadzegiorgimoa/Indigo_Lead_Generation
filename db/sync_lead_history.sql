@@ -76,7 +76,9 @@ BEGIN
            COALESCE(NULLIF(name,''), NULLIF(name_processed,''), N''),
            ISNULL(NULLIF(language,''),'georgian'),
            COALESCE(NULLIF(city,''), NULLIF(city_processed,'')),
-           CASE WHEN COALESCE(NULLIF(customer_type,''), NULLIF(customer_type_processed,'')) = 'dealer' THEN 'Dealer' ELSE 'Retail' END,
+           CASE WHEN COALESCE(NULLIF(customer_type,''), NULLIF(customer_type_processed,'')) IS NULL THEN NULL
+                WHEN COALESCE(NULLIF(customer_type,''), NULLIF(customer_type_processed,'')) = 'dealer' THEN 'Dealer'
+                ELSE 'Retail' END,
            COALESCE(NULLIF(source,''), NULLIF(source_processed,'')),
            additional_comment, sale_operator_id
     FROM dbo.leads

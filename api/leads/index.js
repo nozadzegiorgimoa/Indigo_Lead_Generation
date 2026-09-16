@@ -227,7 +227,10 @@ module.exports = async (req, res) => {
           .input('name', sql.NVarChar(200), name || phoneRaw)
           .input('language', sql.NVarChar(20), language || 'georgian')
           .input('region', sql.NVarChar(120), city || null)
-          .input('clienttype', sql.NVarChar(20), customerType === 'dealer' ? 'Dealer' : 'Retail')
+          .input('clienttype', sql.NVarChar(20),
+            // NULL = nobody said dealer/retail — the proc then defaults by the
+            // client card or the language (georgian->Retail, russian->Dealer).
+            (entType || procType) ? (customerType === 'dealer' ? 'Dealer' : 'Retail') : null)
           .input('source', sql.NVarChar(60), source || null)
           .input('comment', sql.NVarChar(sql.MAX), additionalComment || null)
           .input('force_operator_id', sql.Int, b.saleOperatorId ? Number(b.saleOperatorId) : null)
