@@ -301,7 +301,7 @@ const CUSTOMER_TYPES = [
   { id:"dealer", en:"Dealer", ka:"სადილერო" }
 ];
 const EMPTY = { name:"", phone:"", email:"", channel:"Phone", branch:BRANCHES[0], service:"import",
-  car:"", budget:"", source:SOURCES[0], notes:"", followUp:"",
+  car:"", budget:"", source:SOURCES[0], crossSelling:false, recommender:"", notes:"", followUp:"",
   language:"", customerType:"retail", country:"", city:"", saleGroupId:"", saleOperatorId:"" };
 
 /* ── State ── */
@@ -667,6 +667,13 @@ async function viewNew() {
       input("country",tr.country,"") + input("city",tr.city,"") +
       input("car",tr.car,"2021 Hyundai Tucson") + input("budget",tr.budget,"$ 12 000") +
       selectField("source", tr.source, SOURCES.map(s => '<option'+(f.source===s?" selected":"")+'>'+esc(s)+'</option>').join("")) +
+      '<label style="display:flex;align-items:center;gap:8px;align-self:end;padding-bottom:10px">' +
+        '<input type="checkbox" id="xsell-cb"'+(f.crossSelling?" checked":"")+'> <span class="field-label" style="margin:0">'+
+        esc(state.lang==="ka"?"ქროსსელინგი":"Cross-selling")+'</span></label>' +
+      (f.crossSelling ?
+        '<label><span class="field-label">'+esc(state.lang==="ka"?"რეკომენდატორი *":"Recommender *")+'</span>' +
+        '<input class="field-input" data-form="recommender" value="'+esc(f.recommender||"")+'" placeholder="'+
+        esc(state.lang==="ka"?"თანამშრომლის სახელი და გვარი":"Employee full name")+'"></label>' : '') +
       input("followUp",tr.followUp,"","date") +
       salePicker +
     '</div>' + notesField + '<div id="lead-hints"></div>';
@@ -697,6 +704,15 @@ async function viewNew() {
   const grpSel = el("sale-group"), opSel = el("sale-operator");
   if (grpSel) grpSel.onchange = () => { state.form.saleGroupId = grpSel.value; state.form.saleOperatorId = ""; route(); };
   if (opSel) opSel.onchange = () => { state.form.saleOperatorId = opSel.value; };
+  // Cross-selling: ticking it forces source = Cross-selling and reveals the
+  // required recommender field (any employee, free text).
+  const xcb = el("xsell-cb");
+  if (xcb) xcb.onchange = () => {
+    state.form.crossSelling = xcb.checked;
+    if (xcb.checked) state.form.source = "Cross-selling";
+    else if (state.form.source === "Cross-selling") state.form.source = SOURCES[0];
+    route();
+  };
   el("form-cancel").onclick = () => { state.form = { ...EMPTY }; goto("list"); };
 
   // Live check (phone validity + duplicate + parsed preview) on comment/phone blur.
@@ -752,6 +768,10 @@ async function submitLead(confirmInvalid, confirmOwner) {
   const tr = t(), mode = state.formMode, f2 = state.form;
   if (mode === "short") { if (!(f2.notes || "").trim()) { alert(tr.notes + " —"); return; } }
   else if (!(f2.name || "").trim() && !(f2.phone || "").trim()) return;
+  if (mode === "full" && f2.crossSelling && !(f2.recommender || "").trim()) {
+    alert(state.lang === "ka" ? "მიუთითეთ რეკომენდატორი (თანამშრომლის სახელი და გვარი)."
+                              : "Please enter the recommender (employee full name)."); return;
+  }
 
   const btn = el("form-save"); if (btn) { btn.disabled = true; btn.textContent = tr.saving; }
   const resetBtn = () => { if (btn) { btn.disabled = false; btn.textContent = tr.save; } };

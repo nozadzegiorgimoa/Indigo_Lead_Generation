@@ -114,8 +114,17 @@ module.exports = async (req, res) => {
       const source  = entSource || procSource || null;
       const country = entCountry || procCountry || null;
       const city    = entCity || procCity || null;
-      const additionalComment = shortMode ? (parsed.additionalComment || null)
-                                          : ((b.additionalComment || '').trim() || null);
+      let additionalComment = shortMode ? (parsed.additionalComment || null)
+                                        : ((b.additionalComment || '').trim() || null);
+
+      // Cross-selling requires a recommender (any employee, free text). Fold it
+      // into the comment so it reaches the CRM lead (F145) and the operator.
+      const recommender = (b.recommender || '').trim() || null;
+      if (source === 'Cross-selling') {
+        if (!recommender) return send(res, 400, { error: 'Cross-selling needs a recommender (employee name).' });
+        const tag = 'რეკომენდატორი: ' + recommender;
+        additionalComment = additionalComment ? (tag + ' · ' + additionalComment) : tag;
+      }
 
       // --- raw manual sale-operator pick (persisted from the mirror) ---
       let pickedOp = null;
@@ -184,6 +193,7 @@ module.exports = async (req, res) => {
         .input('country', sql.NVarChar(80), entCountry)
         .input('city', sql.NVarChar(120), entCity)
         .input('additional', sql.NVarChar(sql.MAX), additionalComment)
+        .input('recommender', sql.NVarChar(200), recommender)
         .input('formMode', sql.NVarChar(10), shortMode ? 'short' : 'full')
         .input('pName', sql.NVarChar(160), procName)                     // PROCESSED (parser)
         .input('pPhone', sql.NVarChar(60), procPhone)
@@ -199,7 +209,7 @@ module.exports = async (req, res) => {
           `INSERT INTO dbo.leads
              (name, phone, phone_normalized, email, channel, branch, service, car, budget, source,
               notes, follow_up, status, operator_id, language, customer_type, country, city,
-              additional_comment, form_mode,
+              additional_comment, recommender, form_mode,
               name_processed, phone_processed, source_processed, customer_type_processed,
               city_processed, country_processed,
               sale_operator_id, sale_operator_name, sale_group_id, sale_group_name)
@@ -207,7 +217,7 @@ module.exports = async (req, res) => {
            VALUES
              (@name, @phone, @phoneNorm, @email, @channel, @branch, @service, @car, @budget, @source,
               @notes, @followUp, 'new', @operatorId, @language, @customerType, @country, @city,
-              @additional, @formMode,
+              @additional, @recommender, @formMode,
               @pName, @pPhone, @pSource, @pType, @pCity, @pCountry,
               @soId, @soName, @sgId, @sgName)`
         );

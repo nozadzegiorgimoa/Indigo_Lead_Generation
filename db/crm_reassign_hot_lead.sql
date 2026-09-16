@@ -108,8 +108,15 @@ BEGIN
         JOIN crm.dbo.users u ON u.ID=a.UserID
        WHERE u.GroupID=56 AND a.Russian=1 AND a.StatusID=1 AND a.UserID<>@old_aid;
     ELSE IF @langkey='russian' AND @cct='Retail'
-      IF EXISTS (SELECT 1 FROM crm.dbo.users WHERE ID=1693 AND Deleted IS NULL AND IsBlocked=0 AND IsDenyAccess=0 AND ID<>@old_aid)
-        SET @final_aid = 1693;
+    BEGIN
+      -- Russian retail by region: Batumi->1269, Kutaisi->1112, else Boris 1693.
+      DECLARE @ruop int = CASE WHEN @creg = N'ბათუმი' THEN 1269
+                               WHEN @creg = N'ქუთაისი' THEN 1112 ELSE 1693 END;
+      IF NOT EXISTS (SELECT 1 FROM crm.dbo.users WHERE ID=@ruop AND Deleted IS NULL AND IsBlocked=0 AND IsDenyAccess=0)
+        SET @ruop = 1693;
+      IF EXISTS (SELECT 1 FROM crm.dbo.users WHERE ID=@ruop AND Deleted IS NULL AND IsBlocked=0 AND IsDenyAccess=0 AND ID<>@old_aid)
+        SET @final_aid = @ruop;
+    END
 
     IF @final_aid IS NULL AND NOT EXISTS (SELECT 1 FROM @elig)
       INSERT @elig (UserID)

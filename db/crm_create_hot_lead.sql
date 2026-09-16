@@ -202,8 +202,15 @@ BEGIN
     END
     ELSE IF @lang = 'russian' AND @ct = 'Retail'
     BEGIN
-      IF EXISTS (SELECT 1 FROM crm.dbo.users WHERE ID = 1693 AND Deleted IS NULL AND IsBlocked = 0 AND IsDenyAccess = 0)
-      BEGIN SET @final_aid = 1693; SET @rule = 'ru+retail->boris'; END
+      -- Russian retail by region: Batumi -> Zurab Abashidze (1269), Kutaisi ->
+      -- Davit Maglakelidze (1112), elsewhere -> Boris (1693). Fall back to Boris
+      -- if the regional person is unavailable.
+      DECLARE @ruop int = CASE WHEN @reg = N'ბათუმი' THEN 1269
+                               WHEN @reg = N'ქუთაისი' THEN 1112 ELSE 1693 END;
+      IF NOT EXISTS (SELECT 1 FROM crm.dbo.users WHERE ID = @ruop AND Deleted IS NULL AND IsBlocked = 0 AND IsDenyAccess = 0)
+        SET @ruop = 1693;
+      IF EXISTS (SELECT 1 FROM crm.dbo.users WHERE ID = @ruop AND Deleted IS NULL AND IsBlocked = 0 AND IsDenyAccess = 0)
+      BEGIN SET @final_aid = @ruop; SET @rule = 'ru+retail->' + CASE @ruop WHEN 1269 THEN 'batumi' WHEN 1112 THEN 'kutaisi' ELSE 'boris' END; END
     END
 
     IF @final_aid = 1574 AND NOT EXISTS (SELECT 1 FROM @elig)
