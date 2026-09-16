@@ -31,6 +31,8 @@ BEGIN
                            AND cu.Name NOT LIKE 'System%' AND cu.[Login] <> cu.Name
       JOIN crm.dbo.usersgroups cg ON cg.ID = cu.GroupID AND cg.Add3 = 1
       WHERE c.uid NOT IN (1, 986, 1574)
+        AND NOT EXISTS (SELECT 1 FROM dbo.sale_operators sod
+                        WHERE sod.crm_user_id = c.uid AND sod.temp_disabled = 1)
       ORDER BY CASE WHEN c.last_act IS NULL THEN 1 ELSE 0 END, c.last_act DESC,
                c.is_owner DESC, c.newest_lead DESC
   ) k(uid)

@@ -480,22 +480,32 @@ async function viewRotation() {
   const onTxt = ka ? "როტაციაშია" : "In rotation";
   const offTxt = ka ? "გამორთულია" : "Off";
   const noCfg = ka ? "კონფიგი არ აქვს" : "No config";
+  const disTxt = ka ? "დროებით გათიშული" : "Temp disabled";
+  const disBtn = ka ? "დროებით გათიშვა" : "Temp disable";
+  const resBtn = ka ? "აღდგენა" : "Restore";
   let html = '<div style="max-width:760px">' +
     '<p style="color:#666;font-size:13px;margin:0 0 16px">' +
-    (ka ? "ჩართვა/გამორთვა მოქმედებს მხოლოდ ახალი ლიდების როტაციაზე. გამორთული ოპერატორის არსებული კლიენტები მასვე რჩება."
-        : "Toggles affect only NEW lead rotation. A disabled operator keeps their existing clients.") + '</p>';
+    (ka ? "ჩართვა/გამორთვა მოქმედებს მხოლოდ ახალი ლიდების როტაციაზე. „დროებით გათიშვა“ (დეკრეტი/ხანგრძლივი შვებულება) — ოპერატორს წაერთმევა არსებული ცხელი ლიდებიც და გადანაწილდება სხვებზე."
+        : "Rotation toggle affects only NEW leads. “Temp disable” (maternity/long leave) also removes the operator's existing hot leads and reassigns them to others.") + '</p>';
   Object.keys(groups).sort().forEach(g => {
     html += '<div style="background:#fff;border:1px solid #E7E5F3;border-radius:14px;padding:16px 18px;margin-bottom:14px">' +
       '<div style="font-weight:700;font-size:14px;margin-bottom:10px">' + esc(g) + '</div>';
     groups[g].forEach(o => {
-      const badge = !o.hasConfig
-        ? '<span style="font-size:12px;color:#999">' + noCfg + '</span>'
-        : '<button type="button" data-rot="' + o.id + '" data-en="' + (o.inRotation ? 0 : 1) + '" ' +
-          'style="border:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;' +
-          (o.inRotation ? 'background:#E4F5EC;color:#146A48' : 'background:#FDECEC;color:#A83A3A') + '">' +
-          (o.inRotation ? onTxt : offTxt) + '</button>';
+      let right;
+      if (o.tempDisabled) {
+        right = '<span style="font-size:12px;color:#A83A3A;font-weight:700;margin-right:10px">' + disTxt + '</span>' +
+          '<button type="button" data-dis="' + o.id + '" data-v="0" style="border:1px solid #CBD5E1;background:#fff;border-radius:16px;padding:5px 12px;font-size:12px;cursor:pointer">' + resBtn + '</button>';
+      } else {
+        const badge = !o.hasConfig
+          ? '<span style="font-size:12px;color:#999;margin-right:10px">' + noCfg + '</span>'
+          : '<button type="button" data-rot="' + o.id + '" data-en="' + (o.inRotation ? 0 : 1) + '" ' +
+            'style="border:none;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:700;cursor:pointer;margin-right:10px;' +
+            (o.inRotation ? 'background:#E4F5EC;color:#146A48' : 'background:#FDECEC;color:#A83A3A') + '">' +
+            (o.inRotation ? onTxt : offTxt) + '</button>';
+        right = badge + '<button type="button" data-dis="' + o.id + '" data-v="1" style="border:1px solid #E7C3C3;background:#fff;color:#A83A3A;border-radius:16px;padding:5px 12px;font-size:12px;cursor:pointer">' + disBtn + '</button>';
+      }
       html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-top:1px solid #F2F1FA">' +
-        '<div>' + esc(o.name) + '</div>' + badge + '</div>';
+        '<div>' + esc(o.name) + '</div><div style="display:flex;align-items:center">' + right + '</div></div>';
     });
     html += '</div>';
   });
@@ -509,6 +519,20 @@ async function viewRotation() {
     b.disabled = true;
     try { await api("/api/rotation", { method: "POST", body: { crmUserId: id, enable } }); }
     catch (e) { alert(e.message); }
+    viewRotation();
+  });
+  document.querySelectorAll("[data-dis]").forEach(b => b.onclick = async () => {
+    const id = Number(b.dataset.dis), disable = b.dataset.v === "1";
+    const q = disable
+      ? (ka ? "დროებით გავთიშო? მისი ყველა ცხელი ლიდი გადანაწილდება სხვებზე." : "Temporarily disable? All their hot leads will be reassigned to others.")
+      : (ka ? "აღვადგინო? ხელახლა ჩაერთვება როტაციაში ხელით." : "Restore this operator? Re-enable rotation manually afterwards.");
+    if (!confirm(q)) return;
+    b.disabled = true;
+    try {
+      const r = await api("/api/rotation", { method: "POST", body: { crmUserId: id, tempDisabled: disable } });
+      if (disable && r && typeof r.moved === "number")
+        state.toast = (ka ? "გათიშულია — გადანაწილდა " : "Disabled — reassigned ") + r.moved + (ka ? " ლიდი" : " leads");
+    } catch (e) { alert(e.message); }
     viewRotation();
   });
 }

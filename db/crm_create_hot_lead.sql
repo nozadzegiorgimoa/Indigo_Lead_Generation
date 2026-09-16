@@ -155,6 +155,8 @@ BEGIN
       JOIN crm.dbo.usersgroups g ON g.ID = u.GroupID AND g.Add3 = 1
       LEFT JOIN CRM_Helper.dbo.Users_for_leaddistribute r ON r.UserID = c.uid
       WHERE c.uid NOT IN (1, 986, 1574)
+        AND NOT EXISTS (SELECT 1 FROM Indigo_Lead_Generation.dbo.sale_operators sod
+                        WHERE sod.crm_user_id = c.uid AND sod.temp_disabled = 1)
       ORDER BY CASE WHEN c.last_act IS NULL THEN 1 ELSE 0 END,
                c.last_act DESC,
                c.is_owner DESC,
