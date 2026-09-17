@@ -85,6 +85,28 @@ BEGIN
   CLOSE pool_cur; DEALLOCATE pool_cur;
 
   ------------------------------------------------------------------
+  -- (0d) Delta web-intake leads: raw records auto-created in Delta from the
+  -- website land on the 'Leads_from_web' account (1247), sometimes archived, and
+  -- never reach the pool. Un-archive and distribute them by OUR rules. Limited to
+  -- the last 7 days so no ancient backlog is ever swept up.
+  ------------------------------------------------------------------
+  DECLARE @wlid numeric(18,0), @wa int, @wn nvarchar(225), @wg nvarchar(200);
+  DECLARE web_cur CURSOR LOCAL FAST_FORWARD FOR
+    SELECT ID FROM crm.dbo.loans
+     WHERE AID = 1247 AND Stage = 7 AND Created > DATEADD(DAY, -7, GETDATE());
+  OPEN web_cur; FETCH NEXT FROM web_cur INTO @wlid;
+  WHILE @@FETCH_STATUS = 0
+  BEGIN
+    BEGIN TRY
+      UPDATE crm.dbo.loans SET Archived = 0 WHERE ID = @wlid AND ISNULL(Archived,0) = 1;
+      EXEC crm.dbo.reassign_hot_lead @lid=@wlid, @actor=NULL,
+           @out_aid=@wa OUTPUT, @out_name=@wn OUTPUT, @out_group=@wg OUTPUT;
+    END TRY BEGIN CATCH END CATCH
+    FETCH NEXT FROM web_cur INTO @wlid;
+  END
+  CLOSE web_cur; DEALLOCATE web_cur;
+
+  ------------------------------------------------------------------
   -- (0b) SAFETY NET: portal leads whose CRM push never landed (web function
   -- can be killed mid-call, e.g. by timeouts) get pushed from the server side.
   -- Only rows older than 5 minutes (so we never race a live web request).
