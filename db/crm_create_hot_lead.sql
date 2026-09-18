@@ -116,18 +116,16 @@ BEGIN
       SET @ct = CASE WHEN @lang IN ('russian', 'ukrainian') THEN 'Dealer' ELSE 'Retail' END;
 
   -- The client's existing LEAD to REUSE, so a person never ends up with two open
-  -- leads. Stage 5 (bought a car) and Stage 6 (existing-car deal for sales — a
-  -- clone of Stage 5, NOT a lead) are EXCLUDED: they are never reused, converted
-  -- or archived. Priority: open Stage-7 > most recent other lead stage (e.g. a
-  -- closed/refused lead), which is reactivated to a hot Stage-7. When the client
-  -- has no reusable lead (only a Stage-5/6 car deal, or nothing) a NEW Stage-7 is
-  -- created — on the keeper (so a Stage-6 owner keeps the new hot lead too).
+  -- leads. Stage 7 (hot) and Stage 6 (in-progress "almost-successful" lead) are
+  -- BOTH real leads and reused; only Stage 5 (a bought car) is excluded. Priority:
+  -- Stage 7 > Stage 6 > most recent other (closed/refused, reactivated). When the
+  -- client has no reusable lead a NEW Stage-7 is created on the keeper.
   DECLARE @old_lid numeric(18,0) = NULL, @old_aid int = NULL, @old_f145 nvarchar(max) = NULL, @old_stage int = NULL;
   IF @cid IS NOT NULL
       SELECT TOP 1 @old_lid = ID, @old_aid = AID, @old_f145 = F145, @old_stage = Stage
       FROM crm.dbo.loans
-      WHERE CID IN (SELECT cid FROM @cids) AND ISNULL(Archived, 0) = 0 AND Stage NOT IN (5, 6)
-      ORDER BY CASE Stage WHEN 7 THEN 0 ELSE 1 END, Created DESC;
+      WHERE CID IN (SELECT cid FROM @cids) AND ISNULL(Archived, 0) = 0 AND Stage <> 5
+      ORDER BY CASE Stage WHEN 7 THEN 0 WHEN 6 THEN 1 ELSE 2 END, Created DESC;
 
   -- Who should keep this client? Candidates (must be an active user in a SALES
   -- group, never System/pool):
@@ -302,21 +300,27 @@ BEGIN
           SELECT @old_lid, @cid, 986, 638, @old_f145, lo.Created, 0, 0, 1, 0, 0, 0, 0, 0
           FROM crm.dbo.loans lo WHERE lo.ID = @old_lid;
 
-      -- Reactivate the reused lead to a hot Stage-7 (it may have been Stage 6/8/
-      -- closed), reassign, and write the fresh web text into F145.
+      -- Reuse the existing lead in place, reassign to the keeper, write the fresh
+      -- web text into F145. A Stage-6 in-progress lead KEEPS its stage/state (do
+      -- not drag an almost-successful lead back to hot); a Stage-7 stays hot; a
+      -- closed/other lead is reactivated to a hot Stage-7.
       UPDATE crm.dbo.loans
-         SET Stage = 7, State = 174, AID = @final_aid, Updated = SYSUTCDATETIME(),
+         SET Stage = CASE WHEN @old_stage IN (6, 7) THEN @old_stage ELSE 7 END,
+             State = CASE WHEN @old_stage = 6 THEN State ELSE 174 END,
+             AID = @final_aid, Updated = SYSUTCDATETIME(),
              F145 = CASE WHEN ISNULL(@f145, N'') <> N'' THEN @f145 ELSE F145 END
        WHERE ID = @old_lid;
       SET @lid = @old_lid;
 
-      -- Any OTHER open Stage-7 LEAD of this person is a duplicate -> archive.
-      -- Stage 5/6 (car deals) are left untouched — they are not leads.
+      -- Any OTHER open lead (Stage 6/7 — both are real leads) of this person is a
+      -- duplicate -> archive, so exactly one open lead remains. Stage 5 (bought)
+      -- is left untouched.
       UPDATE crm.dbo.loans
          SET Archived = 1, AID = 986, Updated = SYSUTCDATETIME()
-       WHERE CID IN (SELECT cid FROM @cids) AND Stage = 7
+       WHERE CID IN (SELECT cid FROM @cids) AND Stage IN (6, 7)
          AND ISNULL(Archived, 0) = 0 AND ID <> @old_lid;
-      SET @out_action = CASE WHEN @old_stage = 7 THEN 'reheated' ELSE 'reactivated' END;
+      SET @out_action = CASE WHEN @old_stage = 7 THEN 'reheated'
+                             WHEN @old_stage = 6 THEN 'updated-stage6' ELSE 'reactivated' END;
   END
   ELSE
   BEGIN

@@ -156,6 +156,7 @@ module.exports = async (req, res) => {
         } catch (e) { /* owner check is advisory — never blocks lead capture */ }
       }
 
+
       // Distribution now happens in the CRM (create_hot_lead -> distribute_hot_leads),
       // so no portal-side sale-operator assignment here.
 
