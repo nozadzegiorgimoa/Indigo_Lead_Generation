@@ -25,7 +25,8 @@ module.exports = async (req, res) => {
   );
   const lead = leadRes.recordset[0];
   if (!lead) return send(res, 404, { error: 'Lead not found.' });
-  if (user.role !== 'manager') {
+  const isAdmin = user.role === 'manager' && !user.managedGroup;  // group mgr is scoped even if role=manager
+  if (!isAdmin) {
     if (user.managedGroup) {
       // Group manager: only leads currently owned by their sales group.
       const ok = lead.crm_lid && (await pool.request()

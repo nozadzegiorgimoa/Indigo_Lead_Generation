@@ -22,7 +22,9 @@ function signToken(user) {
 function requireManager(req, res) {
   const user = requireUser(req, res);
   if (!user) return null;
-  if (user.role !== 'manager') { send(res, 403, { error: 'Managers only.' }); return null; }
+  // Full admin only: a managed_group_id makes the user a scoped GROUP manager,
+  // not a full admin — they must not reach admin-only endpoints (e.g. Team).
+  if (user.role !== 'manager' || user.managedGroup) { send(res, 403, { error: 'Managers only.' }); return null; }
   return user;
 }
 

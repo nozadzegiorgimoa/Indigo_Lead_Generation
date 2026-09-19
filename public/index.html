@@ -419,9 +419,12 @@ function renderShell(bodyHtml) {
     { id:"new", label:tr.newLead },
     { id:"list", label:(u && u.role==="operator") ? tr.myLeads : tr.leads }
   ];
-  if (u && u.role === "manager") navItems.push({ id:"users", label:tr.team });
+  // Full admin = manager without a managed group; a group manager (managedGroup
+  // set) is scoped and does not get the Team (all-users) tab.
+  const isAdmin = u && u.role === "manager" && !u.managedGroup;
+  if (isAdmin) navItems.push({ id:"users", label:tr.team });
   const rotLabel = state.lang === "ka" ? "როტაცია" : "Rotation";
-  if (u && (u.role === "manager" || u.managedGroup)) navItems.push({ id:"rotation", label:rotLabel });
+  if (u && (isAdmin || u.managedGroup)) navItems.push({ id:"rotation", label:rotLabel });
   const titles = { dashboard:tr.dashboard, new:tr.newLead, list:navItems[2].label, users:tr.team, password:tr.changePassword, rotation:rotLabel };
   el("root").innerHTML =
     '<div class="app">' +

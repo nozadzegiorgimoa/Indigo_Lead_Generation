@@ -15,8 +15,8 @@ module.exports = async (req, res) => {
     const actor = (await pool.request().input('id', sql.Int, tok.uid)
       .query('SELECT id, name, role, managed_group_id FROM dbo.users WHERE id = @id AND active = 1')).recordset[0];
     if (!actor) return send(res, 403, { error: 'No access.' });
-    const isAdmin = actor.role === 'manager';
     const groupId = actor.managed_group_id || null;
+    const isAdmin = actor.role === 'manager' && !groupId;  // group mgr is scoped even if role=manager
     if (!isAdmin && !groupId) return send(res, 403, { error: 'Rotation management is for managers only.' });
 
     if (req.method === 'GET') {

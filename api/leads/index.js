@@ -24,7 +24,10 @@ module.exports = async (req, res) => {
       const clauses = [];
       const reqd = pool.request();
 
-      if (user.role !== 'manager') {
+      // Full admin = manager WITHOUT a managed group. A managed_group_id makes the
+      // user a GROUP manager (scoped) even if their role is 'manager'.
+      const isAdmin = user.role === 'manager' && !user.managedGroup;
+      if (!isAdmin) {
         if (user.managedGroup) {
           // Group manager: ONLY leads currently owned by their sales group.
           clauses.push('so.group_id = @mg'); reqd.input('mg', sql.Int, user.managedGroup);

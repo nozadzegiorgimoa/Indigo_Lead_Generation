@@ -9,8 +9,10 @@ module.exports = async (req, res) => {
   const user = requireUser(req, res);
   if (!user) return;
 
-  const isManager = user.role === 'manager';
-  const groupScope = !isManager && user.managedGroup ? Number(user.managedGroup) : null;
+  // Full admin = manager without a managed group; a managed_group_id scopes the
+  // dashboard to that group even when the role is 'manager'.
+  const groupScope = user.managedGroup ? Number(user.managedGroup) : null;
+  const isManager = user.role === 'manager' && !groupScope;
   try {
     const pool = await getPool();
     // Group managers see only leads owned by their sales group; plain operators

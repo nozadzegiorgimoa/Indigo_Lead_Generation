@@ -19,7 +19,8 @@ module.exports = async (req, res) => {
     // lead picker and the reassign picker). temp-disabled are leavers; off-rotation
     // operators are intentionally not selectable.
     let where = 'active = 1 AND ISNULL(temp_disabled, 0) = 0 AND ISNULL(in_rotation, 0) = 1';
-    if (user.role !== 'manager' && user.managedGroup) {
+    // A managed_group_id scopes the picker to that group even for role=manager.
+    if (user.managedGroup) {
       where += ' AND group_id = @mg';
       rq.input('mg', sql.Int, Number(user.managedGroup));
     }
