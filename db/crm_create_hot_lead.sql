@@ -116,16 +116,20 @@ BEGIN
       SET @ct = CASE WHEN @lang IN ('russian', 'ukrainian') THEN 'Dealer' ELSE 'Retail' END;
 
   -- The client's existing LEAD to REUSE, so a person never ends up with two open
-  -- leads. Stage 7 (hot) and Stage 6 (in-progress "almost-successful" lead) are
-  -- BOTH real leads and reused; only Stage 5 (a bought car) is excluded. Priority:
-  -- Stage 7 > Stage 6 > most recent other (closed/refused, reactivated). When the
-  -- client has no reusable lead a NEW Stage-7 is created on the keeper.
+  -- leads. Stage 7 (hot) is a lead. Stage 6 can be EITHER a real in-progress lead
+  -- OR the sales-operator side of a purchased car (a clone of a Stage-5 deal,
+  -- linked by EID -> the Stage-5 loan's ID). A Stage-6 CAR-DEAL clone is NOT a
+  -- lead and is skipped; a Stage-6 with no such Stage-5 link IS a lead and is
+  -- reused. Stage 5 is always excluded. Priority: Stage 7 > Stage-6 lead > other.
+  -- If the client has only Stage-5/clone-Stage-6, a NEW Stage-7 lead is created.
   DECLARE @old_lid numeric(18,0) = NULL, @old_aid int = NULL, @old_f145 nvarchar(max) = NULL, @old_stage int = NULL;
   IF @cid IS NOT NULL
-      SELECT TOP 1 @old_lid = ID, @old_aid = AID, @old_f145 = F145, @old_stage = Stage
-      FROM crm.dbo.loans
-      WHERE CID IN (SELECT cid FROM @cids) AND ISNULL(Archived, 0) = 0 AND Stage <> 5
-      ORDER BY CASE Stage WHEN 7 THEN 0 WHEN 6 THEN 1 ELSE 2 END, Created DESC;
+      SELECT TOP 1 @old_lid = lo.ID, @old_aid = lo.AID, @old_f145 = lo.F145, @old_stage = lo.Stage
+      FROM crm.dbo.loans lo
+      WHERE lo.CID IN (SELECT cid FROM @cids) AND ISNULL(lo.Archived, 0) = 0 AND lo.Stage <> 5
+        AND NOT (lo.Stage = 6 AND ISNULL(lo.EID, 0) <> 0
+                 AND EXISTS (SELECT 1 FROM crm.dbo.loans l5 WHERE l5.ID = lo.EID AND l5.Stage = 5))
+      ORDER BY CASE lo.Stage WHEN 7 THEN 0 WHEN 6 THEN 1 ELSE 2 END, lo.Created DESC;
 
   -- Who should keep this client? Candidates (must be an active user in a SALES
   -- group, never System/pool):
@@ -312,13 +316,17 @@ BEGIN
        WHERE ID = @old_lid;
       SET @lid = @old_lid;
 
-      -- Any OTHER open lead (Stage 6/7 — both are real leads) of this person is a
-      -- duplicate -> archive, so exactly one open lead remains. Stage 5 (bought)
-      -- is left untouched.
-      UPDATE crm.dbo.loans
+      -- Any OTHER open LEAD (Stage 7, or a non-clone Stage-6 lead) of this person
+      -- is a duplicate -> archive, so exactly one open lead remains. Stage 5
+      -- (bought) and Stage-6 CAR-DEAL clones are left untouched — they are not
+      -- leads, and a client may hold several (multiple purchased cars).
+      UPDATE lo
          SET Archived = 1, AID = 986, Updated = SYSUTCDATETIME()
-       WHERE CID IN (SELECT cid FROM @cids) AND Stage IN (6, 7)
-         AND ISNULL(Archived, 0) = 0 AND ID <> @old_lid;
+      FROM crm.dbo.loans lo
+       WHERE lo.CID IN (SELECT cid FROM @cids) AND lo.Stage IN (6, 7)
+         AND ISNULL(lo.Archived, 0) = 0 AND lo.ID <> @old_lid
+         AND NOT (lo.Stage = 6 AND ISNULL(lo.EID, 0) <> 0
+                  AND EXISTS (SELECT 1 FROM crm.dbo.loans l5 WHERE l5.ID = lo.EID AND l5.Stage = 5));
       SET @out_action = CASE WHEN @old_stage = 7 THEN 'reheated'
                              WHEN @old_stage = 6 THEN 'updated-stage6' ELSE 'reactivated' END;
   END
