@@ -68,7 +68,9 @@ BEGIN
   -- an existing client's stored type first, else by language (user rule
   -- 2026-09-16: unspecified Georgian -> Retail, unspecified Russian -> Dealer).
   DECLARE @ct  nvarchar(20)  = CASE WHEN @clienttype IN ('Dealer','Retail') THEN @clienttype ELSE NULL END;
-  SET @source = ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(@source,N''))),N''), N'Website form');
+  -- No source given -> 'Unknown' (self-sourced by staff etc.), NOT 'Website form'.
+  -- Both are whitelisted so the lead still appears in the hot-leads report.
+  SET @source = ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(@source,N''))),N''), N'Unknown');
   SET @name = LTRIM(RTRIM(ISNULL(@name, N'')));
   DECLARE @digits nvarchar(40) =
       REPLACE(REPLACE(REPLACE(REPLACE(ISNULL(@phone,''),' ',''),'+',''),'-',''),'(','');

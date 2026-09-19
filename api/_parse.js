@@ -24,8 +24,13 @@ const CITY_HINTS = [
 
 function detectCustomerType(text) {
   if (!text) return null;
-  if (/(სადილერო|დილერ|dealer|b2b)/i.test(text)) return 'dealer';
-  if (/(საცალო|რითეილ|retail|b2c)/i.test(text)) return 'retail';
+  // Explicit Georgian words win first (they are what marketing actually writes),
+  // so a company name like "B2Bus Georgia" can't mis-flag a საცალო lead as dealer.
+  if (/(საცალო|რითეილ)/iu.test(text)) return 'retail';
+  if (/(სადილერო|დილერ)/iu.test(text)) return 'dealer';
+  // Latin b2b/b2c only when whole-word (B2Bus, b2c-something must NOT match).
+  if (/(?<![\p{L}\d])b2b(?![\p{L}\d])|(?<![\p{L}])dealer(?![\p{L}])/iu.test(text)) return 'dealer';
+  if (/(?<![\p{L}\d])b2c(?![\p{L}\d])|(?<![\p{L}])retail(?![\p{L}])/iu.test(text)) return 'retail';
   return null;
 }
 
