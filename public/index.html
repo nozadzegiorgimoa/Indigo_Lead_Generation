@@ -426,7 +426,7 @@ function renderShell(bodyHtml) {
   const rotLabel = state.lang === "ka" ? "როტაცია" : "Rotation";
   if (u && (isAdmin || u.managedGroup)) navItems.push({ id:"rotation", label:rotLabel });
   const coldLabel = state.lang === "ka" ? "ცივი ლიდი" : "Cold lead";
-  if (u && (isAdmin || u.managedGroup)) navItems.push({ id:"cold", label:coldLabel });
+  if (isAdmin) navItems.push({ id:"cold", label:coldLabel });   // high managers only
   const titles = { dashboard:tr.dashboard, new:tr.newLead, list:navItems[2].label, users:tr.team, password:tr.changePassword, rotation:rotLabel, cold:coldLabel };
   el("root").innerHTML =
     '<div class="app">' +
@@ -479,6 +479,8 @@ function showError(msg) { renderShell('<div class="banner-error">'+esc(msg)+'</d
 /* ══════════════ COLD LEAD (distribute a phone as a hot lead) ══════════════ */
 async function viewCold() {
   const tr = t(), ka = state.lang === "ka";
+  // High managers (full admin) only — group managers must not reach this.
+  if (!(state.user.role === "manager" && !state.user.managedGroup)) { goto("dashboard"); return; }
   if (!state.saleGroups.length) { try { state.saleGroups = (await api("/api/sale-operators")).groups || []; } catch (e) { /* non-fatal */ } }
   const opGroups = (state.saleGroups || []).map(g =>
     '<optgroup label="'+esc(g.name)+'">'+ g.operators.map(o => '<option value="'+o.id+'">'+esc(o.name)+'</option>').join("") +'</optgroup>').join("");
