@@ -288,7 +288,7 @@ const STATUSES = [
   { id:"blocked", en:"Blocked", ka:"დაბლოკილი", bg:"#FBE9E9", fg:"#8A1F1F", bar:"#B32424" }
 ];
 const BRANCHES = ["Tbilisi · Avlabari","Gori","Kutaisi","Batumi","Marneuli","USA · Keyport NJ"];
-const SOURCES = ["Unknown","Website form","Facebook","Instagram","Meta Lead Form","WhatsApp","Viber","TikTok","Phone call","Walk-in","Referral","Hot line","Cross-selling"];
+const SOURCES = ["Unknown","Website form","Facebook","Instagram","Meta Lead Form","WhatsApp","Viber","TikTok","Phone call","Walk-in","Referral","Hot line","Cross-selling","Indigo cold lead"];
 const CHANNELS = ["Phone","WhatsApp","Viber","Email"];
 const LANGS = [
   { id:"georgian",  en:"Georgian",  ka:"ქართული" },
@@ -425,7 +425,9 @@ function renderShell(bodyHtml) {
   if (isAdmin) navItems.push({ id:"users", label:tr.team });
   const rotLabel = state.lang === "ka" ? "როტაცია" : "Rotation";
   if (u && (isAdmin || u.managedGroup)) navItems.push({ id:"rotation", label:rotLabel });
-  const titles = { dashboard:tr.dashboard, new:tr.newLead, list:navItems[2].label, users:tr.team, password:tr.changePassword, rotation:rotLabel };
+  const coldLabel = state.lang === "ka" ? "ცივი ლიდი" : "Cold lead";
+  if (u && (isAdmin || u.managedGroup)) navItems.push({ id:"cold", label:coldLabel });
+  const titles = { dashboard:tr.dashboard, new:tr.newLead, list:navItems[2].label, users:tr.team, password:tr.changePassword, rotation:rotLabel, cold:coldLabel };
   el("root").innerHTML =
     '<div class="app">' +
       '<aside class="sidebar">' +
@@ -474,6 +476,38 @@ function loading() { renderShell('<div class="spinner"></div>'); }
 function showError(msg) { renderShell('<div class="banner-error">'+esc(msg)+'</div>'); }
 
 /* ══════════════ ROUTES ══════════════ */
+/* ══════════════ COLD LEAD (distribute a phone as a hot lead) ══════════════ */
+async function viewCold() {
+  const tr = t(), ka = state.lang === "ka";
+  if (!state.saleGroups.length) { try { state.saleGroups = (await api("/api/sale-operators")).groups || []; } catch (e) { /* non-fatal */ } }
+  const opGroups = (state.saleGroups || []).map(g =>
+    '<optgroup label="'+esc(g.name)+'">'+ g.operators.map(o => '<option value="'+o.id+'">'+esc(o.name)+'</option>').join("") +'</optgroup>').join("");
+  const html = '<div style="max-width:520px">' +
+    '<p style="color:#666;font-size:13px;margin:0 0 18px">' +
+      esc(ka ? "შეიყვანეთ ტელეფონის ნომერი — გადანაწილდება ცხელ ლიდად ჩვენი წესებით (წყარო: Indigo cold lead). ცარიელი მენეჯერი = ავტო-როტაცია."
+             : "Enter a phone number — it will be distributed as a hot lead by our rules (source: Indigo cold lead). Empty operator = auto-rotate.") + '</p>' +
+    '<label style="display:block;margin-bottom:12px"><span class="field-label">'+esc(tr.phone)+' *</span>' +
+      '<input class="field-input" id="cl-phone" placeholder="+995 5XX XX XX XX"></label>' +
+    '<label style="display:block;margin-bottom:12px"><span class="field-label">'+esc(tr.fullName)+'</span>' +
+      '<input class="field-input" id="cl-name" placeholder=""></label>' +
+    '<label style="display:block;margin-bottom:18px"><span class="field-label">'+esc(ka?"მენეჯერი":"Operator")+'</span>' +
+      '<select class="field-input" id="cl-op"><option value="">'+esc(ka?"⟳ ავტო-როტაცია":"⟳ Auto-rotate")+'</option>'+opGroups+'</select></label>' +
+    '<button type="button" class="btn-save" id="cl-submit">'+esc(ka?"განაწილება":"Distribute")+'</button></div>';
+  renderShell(html);
+  el("page-title").textContent = ka ? "ცივი ლიდი" : "Cold lead";
+  el("cl-submit").onclick = () => {
+    const phone = el("cl-phone").value.trim();
+    if (!phone) { alert(tr.phone + " —"); return; }
+    state.form = Object.assign({}, EMPTY, {
+      phone, name: el("cl-name").value.trim(),
+      source: "Indigo cold lead",
+      saleOperatorId: el("cl-op").value ? Number(el("cl-op").value) : "",
+    });
+    state.formMode = "full";
+    submitLead(false);
+  };
+}
+
 /* ══════════════ ROTATION (group managers) ══════════════ */
 async function viewRotation() {
   const ka = state.lang === "ka";
@@ -549,6 +583,7 @@ async function route() {
     if (state.view === "password") viewPassword();
     else if (state.view === "users") await viewUsers();
     else if (state.view === "rotation") await viewRotation();
+    else if (state.view === "cold") await viewCold();
     else if (state.view === "dashboard") await viewDashboard();
     else if (state.view === "new") await viewNew();
     else if (state.view === "list") await viewList();

@@ -7,7 +7,7 @@
 const CANONICAL_SOURCES = [
   'Unknown', 'Website form', 'Facebook', 'Instagram', 'Meta Lead Form', 'WhatsApp',
   'Viber', 'TikTok', 'Phone call', 'Walk-in', 'Referral',
-  'Hot line', 'Cross-selling',
+  'Hot line', 'Cross-selling', 'Indigo cold lead',
 ];
 
 // Order matters: more specific first (Meta Lead Form before bare "meta").
