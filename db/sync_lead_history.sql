@@ -7,6 +7,9 @@
 CREATE OR ALTER PROCEDURE dbo.sync_lead_history AS
 BEGIN
   SET NOCOUNT ON;
+  -- Fail fast on Delta's locks so a run never hangs; whatever it can't do now it
+  -- retries next cycle. (create_hot_lead / reassign_hot_lead set their own too.)
+  SET LOCK_TIMEOUT 8000;
 
   ------------------------------------------------------------------
   -- (0) keeper pre-assignment for pool leads.

@@ -44,6 +44,12 @@ CREATE OR ALTER PROCEDURE dbo.create_hot_lead
 AS
 BEGIN
   SET NOCOUNT ON;
+  -- Fail fast on Delta's table locks instead of hanging (the web function would be
+  -- killed and the lead left unpushed) — the 3-min retry job re-does it next cycle.
+  SET LOCK_TIMEOUT 8000;
+  -- Any error (incl. a lock timeout) aborts the transaction below, so a call that
+  -- fails mid-way never leaves a half-written client/loan.
+  SET XACT_ABORT ON;
 
   DECLARE @lang nvarchar(20) = LOWER(@language);
   -- CIS-country numbers arriving with the DEFAULT 'georgian' language are
@@ -264,6 +270,8 @@ BEGIN
   -- Client: create, or fill empty fields (FIO is never touched).
   ---------------------------------------------------------------------------
   DECLARE @lid numeric(18,0) = NULL;
+  BEGIN TRY
+  BEGIN TRAN;
   IF @cid IS NULL
   BEGIN
       INSERT crm.dbo.clients (Created, Updated, T, FIO, FIOen, F14, F15, F524, F525, F609, AID)
@@ -365,6 +373,13 @@ BEGIN
     (crm_lid, crm_cid, from_operator_id, to_operator_id, to_operator_name, to_group_name, method)
   VALUES (@lid, @cid, @old_aid, @final_aid, @toName, @toGrp,
           N'portal:' + ISNULL(@rule, 'pool'));
+
+  COMMIT TRAN;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+    THROW;   -- surface to the caller (web catch logs it; retry job re-does it)
+  END CATCH
 
   SET @out_cid = @cid;
   SET @out_lid = @lid;
