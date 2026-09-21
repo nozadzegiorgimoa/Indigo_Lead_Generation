@@ -20,6 +20,8 @@ CREATE OR ALTER PROCEDURE dbo.reassign_hot_lead
 AS
 BEGIN
   SET NOCOUNT ON;
+  SET LOCK_TIMEOUT 8000;   -- fail fast on Delta's locks (no web 504 / hang)
+  SET XACT_ABORT ON;       -- any error aborts + rolls back the apply transaction
 
   DECLARE @cid numeric(18,0), @old_aid int, @stage int;
   SELECT @cid = CID, @old_aid = AID, @stage = Stage
@@ -147,8 +149,10 @@ BEGIN
   IF @final_aid IS NULL BEGIN RAISERROR('No eligible operator found for this reassignment.',16,1); RETURN; END
 
   ------------------------------------------------------------------
-  -- Apply: move the Stage-7 lead + client card, feed reports, log.
+  -- Apply: move the Stage-7 lead + client card, feed reports, log (atomically).
   ------------------------------------------------------------------
+  BEGIN TRY
+  BEGIN TRAN;
   UPDATE crm.dbo.loans SET AID = @final_aid, State = CASE WHEN Stage=7 THEN 174 ELSE State END,
          Updated = SYSUTCDATETIME() WHERE ID = @lid;
   UPDATE crm.dbo.clients SET AID = @final_aid WHERE ID = @cid;
@@ -158,6 +162,12 @@ BEGIN
     (crm_lid, crm_cid, from_operator_id, to_operator_id, to_operator_name, to_group_name, method)
   SELECT @lid, @cid, @old_aid, @final_aid, u.Name, g.Caption, N'portal:reassign'
   FROM crm.dbo.users u JOIN crm.dbo.usersgroups g ON g.ID=u.GroupID WHERE u.ID=@final_aid;
+  COMMIT TRAN;
+  END TRY
+  BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+    THROW;
+  END CATCH
 
   SELECT @out_aid = u.ID, @out_name = u.Name, @out_group = g.Caption
   FROM crm.dbo.users u JOIN crm.dbo.usersgroups g ON g.ID=u.GroupID WHERE u.ID=@final_aid;
