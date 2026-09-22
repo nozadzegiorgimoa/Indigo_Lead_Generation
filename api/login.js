@@ -10,6 +10,13 @@ module.exports = async (req, res) => {
     if (!email || !password) return send(res, 400, { error: 'Enter your email and password.' });
 
     const pool = await getPool();
+
+    // Portal closed? (merged into another site) — block sign-in until reopened.
+    const st = await pool.request().query("SELECT val FROM dbo.app_settings WHERE [key] = 'portal_open'");
+    if (st.recordset.length && Number(st.recordset[0].val) === 0) {
+      return send(res, 503, { error: 'The portal is currently closed.' });
+    }
+
     const result = await pool.request()
       .input('email', sql.NVarChar(190), String(email).trim().toLowerCase())
       .query('SELECT TOP 1 id, name, email, password_hash, role, branch, active, must_change, managed_group_id FROM dbo.users WHERE LOWER(email) = @email');

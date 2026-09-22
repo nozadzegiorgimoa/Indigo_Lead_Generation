@@ -1176,8 +1176,23 @@ async function viewUsers() {
 }
 
 /* ══════════════ BOOT ══════════════ */
+function renderClosed() {
+  el("root").innerHTML =
+    '<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F4F3FB;padding:24px">' +
+    '<div style="max-width:440px;text-align:center;background:#fff;border:1px solid #E7E5F3;border-radius:18px;padding:40px 32px">' +
+      '<div style="font-size:40px;margin-bottom:12px">🔒</div>' +
+      '<div style="font-size:20px;font-weight:800;color:#1E1B4B;margin-bottom:10px">პორტალი დროებით დახურულია</div>' +
+      '<div style="font-size:14px;color:#666;line-height:1.5">Portal temporarily closed.</div>' +
+    '</div></div>';
+}
+
 async function boot() {
   document.documentElement.lang = state.lang;
+  // Portal open/closed gate (DB flag) — one toggle, no redeploy.
+  try {
+    const stt = await fetch("/api/status").then(r => r.json()).catch(() => ({ open: true }));
+    if (stt && stt.open === false) return renderClosed();
+  } catch (e) { /* if the probe fails, fall through and let the app load */ }
   if (!state.token) return renderLogin();
   loading();
   try {

@@ -63,6 +63,11 @@ module.exports = async (req, res) => {
   // ---------------- CREATE ----------------
   if (req.method === 'POST') {
     try {
+      // Portal closed? — block new lead intake until reopened.
+      const st = await pool.request().query("SELECT val FROM dbo.app_settings WHERE [key] = 'portal_open'");
+      if (st.recordset.length && Number(st.recordset[0].val) === 0) {
+        return send(res, 503, { error: 'The portal is currently closed.' });
+      }
       const b = await readJson(req);
       const shortMode = b.formMode === 'short';
 
