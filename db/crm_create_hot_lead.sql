@@ -315,12 +315,13 @@ BEGIN
           FROM crm.dbo.loans lo WHERE lo.ID = @old_lid;
 
       -- Reuse the existing lead in place, reassign to the keeper, write the fresh
-      -- web text into F145. A Stage-6 in-progress lead KEEPS its stage/state (do
-      -- not drag an almost-successful lead back to hot); a Stage-7 stays hot; a
-      -- closed/other lead is reactivated to a hot Stage-7.
+      -- web text into F145. A new web inquiry is a fresh HOT signal, so the reused
+      -- lead is always re-hotted to Stage 7 / State 174 — otherwise a lead sitting
+      -- in a terminal state (e.g. „5.აღარ არის დაინტერესებული") stays there, the
+      -- operator never re-works it, and Delta's nightly job reclaims it to System2
+      -- (case 995557508704, 2026-09-24).
       UPDATE crm.dbo.loans
-         SET Stage = CASE WHEN @old_stage IN (6, 7) THEN @old_stage ELSE 7 END,
-             State = CASE WHEN @old_stage = 6 THEN State ELSE 174 END,
+         SET Stage = 7, State = 174,
              AID = @final_aid, Updated = SYSUTCDATETIME(),
              F145 = CASE WHEN ISNULL(@f145, N'') <> N'' THEN @f145 ELSE F145 END
        WHERE ID = @old_lid;
@@ -337,8 +338,7 @@ BEGIN
          AND ISNULL(lo.Archived, 0) = 0 AND lo.ID <> @old_lid
          AND NOT (lo.Stage = 6 AND ISNULL(lo.EID, 0) <> 0
                   AND EXISTS (SELECT 1 FROM crm.dbo.loans l5 WHERE l5.ID = lo.EID AND l5.Stage = 5));
-      SET @out_action = CASE WHEN @old_stage = 7 THEN 'reheated'
-                             WHEN @old_stage = 6 THEN 'updated-stage6' ELSE 'reactivated' END;
+      SET @out_action = CASE WHEN @old_stage IN (6,7) THEN 'reheated' ELSE 'reactivated' END;
   END
   ELSE
   BEGIN
